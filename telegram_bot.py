@@ -12,8 +12,8 @@ from deep_translator import GoogleTranslator
 # CONFIGURACION
 # ==========================================
 
-TOKEN = "7707355895:AAH2blK0HST823Z3txr2N979MpWXvPqdBZU"
-CHAT_ID = "1054479634"
+TOKEN = os.getenv("TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
 HISTORY_FILE = "noticias_enviadas.json"
 NOTICIAS_POR_FUENTE = 2
