@@ -8,12 +8,19 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from deep_translator import GoogleTranslator
 
+# ==========================================
+# CONFIGURACION
+# ==========================================
+
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 HISTORY_FILE = "noticias_enviadas.json"
 NOTICIAS_POR_FUENTE = 2
-LINEAS_RESUMEN = 20
+
+# ==========================================
+# FUENTES RSS
+# ==========================================
 
 FUENTES = {
     "Guitar World": "https://www.guitarworld.com/feeds/all",
@@ -27,16 +34,45 @@ FUENTES = {
     "Guitar.com": "https://guitar.com/feed/"
 }
 
+# ==========================================
+# PALABRAS CLAVE
+# ==========================================
+
 KEYWORDS = [
-    "electric guitar", "guitar", "guitar gear", "guitar pedals",
-    "guitar amps", "guitar amplifier", "guitar plugins",
-    "guitarristas", "guitarists", "guitar events", "NAMM",
-    "Neural DSP", "Line 6 Helix", "Fractal Audio", "Kemper",
-    "Boss pedals", "Ibanez guitar", "Fender guitar",
-    "Gibson guitar", "PRS guitar", "pedalboard",
-    "amp modeler", "multi effects", "plugin", "plugins",
-    "guitarist", "amp", "pedal", "effects"
+    "electric guitar",
+    "guitar",
+    "guitar gear",
+    "guitar pedals",
+    "guitar amps",
+    "guitar amplifier",
+    "guitar plugins",
+    "guitarristas",
+    "guitarists",
+    "guitar events",
+    "NAMM",
+    "Neural DSP",
+    "Line 6 Helix",
+    "Fractal Audio",
+    "Kemper",
+    "Boss pedals",
+    "Ibanez guitar",
+    "Fender guitar",
+    "Gibson guitar",
+    "PRS guitar",
+    "pedalboard",
+    "amp modeler",
+    "multi effects",
+    "plugin",
+    "plugins",
+    "guitarist",
+    "amp",
+    "pedal",
+    "effects"
 ]
+
+# ==========================================
+# CARGAR HISTORIAL
+# ==========================================
 
 try:
     if os.path.exists(HISTORY_FILE) and os.path.getsize(HISTORY_FILE) > 0:
@@ -47,8 +83,21 @@ try:
 except:
     noticias_enviadas = []
 
+# ==========================================
+# TELEGRAM
+# ==========================================
+
 telegram_message_url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+
+# ==========================================
+# TRADUCTOR
+# ==========================================
+
 traductor = GoogleTranslator(source="auto", target="es")
+
+# ==========================================
+# FUNCIONES
+# ==========================================
 
 def limpiar_html(texto):
     soup = BeautifulSoup(texto or "", "html.parser")
@@ -56,9 +105,6 @@ def limpiar_html(texto):
 
 def traducir(texto):
     try:
-        if not texto:
-            return ""
-        texto = texto[:4500]
         return traductor.translate(texto)
     except:
         return texto
@@ -66,13 +112,56 @@ def traducir(texto):
 def escape(texto):
     return html.escape(texto or "")
 
+# ==========================================
+# RESUMEN DETALLADO
+# ==========================================
+
+def crear_resumen(descripcion):
+
+    if not descripcion:
+        return (
+            "Consulta el enlace para leer la información completa sobre esta noticia. "
+            "El contenido está relacionado con guitarra eléctrica, equipo, amplificadores, "
+            "pedales, plugins, modeladores o tecnología para guitarristas. "
+            "Puede incluir lanzamientos, actualizaciones, entrevistas, reseñas o novedades "
+            "importantes dentro del mundo del gear."
+        )
+
+    resumen = descripcion.strip()
+
+    if len(resumen) > 700:
+        resumen = resumen[:700].strip() + "..."
+
+    if len(resumen) < 250:
+        resumen += (
+            " Esta noticia puede ser relevante para guitarristas interesados en mejorar su sonido, "
+            "conocer nuevos productos, seguir tendencias de gear o descubrir herramientas modernas "
+            "para grabación, práctica y presentaciones en vivo."
+        )
+
+    return resumen
+
+# ==========================================
+# FILTRO DE RELEVANCIA
+# ==========================================
+
 def es_relevante(titulo, descripcion):
+
     texto = f"{titulo} {descripcion}".lower()
-    return any(keyword.lower() in texto for keyword in KEYWORDS)
+
+    return any(
+        keyword.lower() in texto
+        for keyword in KEYWORDS
+    )
+
+# ==========================================
+# ENVIAR A TELEGRAM
+# ==========================================
 
 def enviar_texto(texto):
+
     if len(texto) > 3900:
-        texto = texto[:3900].strip() + "\n\nTexto recortado por límite de Telegram."
+        texto = texto[:3900] + "..."
 
     payload = {
         "chat_id": CHAT_ID,
@@ -81,92 +170,26 @@ def enviar_texto(texto):
         "disable_web_page_preview": False
     }
 
-    r = requests.post(telegram_message_url, data=payload)
+    r = requests.post(
+        telegram_message_url,
+        data=payload
+    )
+
     print(r.text)
 
-def obtener_texto_articulo(url):
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-
-        response = requests.get(
-            url,
-            headers=headers,
-            timeout=12
-        )
-
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
-            tag.decompose()
-
-        parrafos = []
-
-        for p in soup.find_all(["p", "h2", "h3"]):
-            texto = p.get_text(" ", strip=True)
-
-            if texto and len(texto) > 40:
-                parrafos.append(texto)
-
-        texto_final = " ".join(parrafos)
-
-        return texto_final[:3500]
-
-    except Exception as e:
-        print(f"No se pudo extraer artículo: {url}")
-        print(e)
-        return ""
-
-def crear_resumen_extenso(titulo, descripcion, link):
-    texto_articulo = obtener_texto_articulo(link)
-
-    base = ""
-
-    if descripcion:
-        base += descripcion + " "
-
-    if texto_articulo:
-        base += texto_articulo
-
-    if not base.strip():
-        base = (
-            f"La noticia trata sobre {titulo}. "
-            "El contenido está relacionado con guitarra eléctrica, gear, amplificadores, "
-            "pedales, plugins, modeladores o tecnología para guitarristas."
-        )
-
-    base_es = traducir(base)
-    base_es = limpiar_html(base_es)
-
-    oraciones = []
-    partes = base_es.replace("。", ".").replace("!", ".").replace("?", ".").split(".")
-
-    for parte in partes:
-        parte = parte.strip()
-
-        if len(parte) > 35:
-            oraciones.append(parte)
-
-        if len(oraciones) >= LINEAS_RESUMEN:
-            break
-
-    if len(oraciones) < 8:
-        oraciones.append("La información puede ser relevante para guitarristas interesados en equipo moderno y nuevas tendencias.")
-        oraciones.append("El tema puede estar relacionado con sonido, tono, ejecución, grabación o herramientas para mejorar el desempeño musical.")
-        oraciones.append("También puede aportar contexto sobre marcas, artistas, lanzamientos o tecnología aplicada a la guitarra.")
-        oraciones.append("Para conocer todos los detalles técnicos, conviene revisar la publicación original en el enlace.")
-
-    resumen_lineas = []
-
-    for i, oracion in enumerate(oraciones[:LINEAS_RESUMEN], start=1):
-        resumen_lineas.append(f"{i}. {oracion.strip()}.")
-
-    return "\n".join(resumen_lineas)
+# ==========================================
+# NEURAL DSP
+# ==========================================
 
 def obtener_noticias_neuraldsp():
+
     noticias = []
 
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
+
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
 
         response = requests.get(
             "https://neuraldsp.com/news",
@@ -175,10 +198,13 @@ def obtener_noticias_neuraldsp():
         )
 
         soup = BeautifulSoup(response.text, "html.parser")
+
         enlaces = soup.find_all("a", href=True)
+
         usados = set()
 
         for enlace in enlaces:
+
             href = enlace.get("href", "")
 
             if "/news/" not in href:
@@ -202,7 +228,10 @@ def obtener_noticias_neuraldsp():
                 "descripcion": (
                     "Nueva publicación de Neural DSP relacionada con plugins, "
                     "actualizaciones, modeladores de amplificador, tecnología de audio "
-                    "o herramientas digitales para guitarristas modernos."
+                    "o herramientas digitales para guitarristas modernos. "
+                    "La noticia puede incluir mejoras de software, nuevos artistas, "
+                    "compatibilidad con hardware, presets o cambios importantes "
+                    "en productos utilizados por músicos profesionales."
                 ),
                 "link": link
             })
@@ -218,17 +247,32 @@ def obtener_noticias_neuraldsp():
 
     return noticias
 
+# ==========================================
+# YOUNG GUITAR
+# ==========================================
+
 def obtener_noticias_youngguitar():
+
     noticias = []
     usados = set()
-    headers = {"User-Agent": "Mozilla/5.0"}
+
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
 
     try:
-        feed = feedparser.parse("https://youngguitar.jp/feed/")
+
+        feed = feedparser.parse(
+            "https://youngguitar.jp/feed/"
+        )
 
         for entry in feed.entries:
+
             titulo = entry.get("title", "")
-            descripcion = limpiar_html(entry.get("summary", ""))
+            descripcion = limpiar_html(
+                entry.get("summary", "")
+            )
+
             link = entry.get("link", "")
 
             if not titulo or not link:
@@ -253,6 +297,7 @@ def obtener_noticias_youngguitar():
         print(e)
 
     try:
+
         response = requests.get(
             "https://youngguitar.jp/",
             headers=headers,
@@ -260,9 +305,11 @@ def obtener_noticias_youngguitar():
         )
 
         soup = BeautifulSoup(response.text, "html.parser")
+
         enlaces = soup.find_all("a", href=True)
 
         for enlace in enlaces:
+
             href = enlace.get("href", "")
 
             if "youngguitar.jp" not in href:
@@ -280,8 +327,8 @@ def obtener_noticias_youngguitar():
                 "titulo": titulo,
                 "descripcion": (
                     "Noticia publicada por Young Guitar relacionada con guitarristas, "
-                    "guitarras eléctricas, equipo, entrevistas, lanzamientos o novedades "
-                    "del mundo de la guitarra."
+                    "guitarras eléctricas, entrevistas, lanzamientos, equipo profesional "
+                    "o novedades importantes del mundo del rock y metal."
                 ),
                 "link": href
             })
@@ -296,6 +343,10 @@ def obtener_noticias_youngguitar():
         print(e)
 
     return noticias
+
+# ==========================================
+# ENCABEZADO
+# ==========================================
 
 fecha_hoy = datetime.now().strftime("%d/%m/%Y")
 
@@ -313,6 +364,7 @@ encabezado = (
 )
 
 enviar_texto(encabezado)
+
 time.sleep(2)
 
 nuevos_links = []
@@ -323,17 +375,20 @@ total_enviadas = 0
 # ==========================================
 
 for noticia in obtener_noticias_neuraldsp():
-    titulo_traducido = traducir(noticia["titulo"])
-    titulo = escape(titulo_traducido)
-    link = noticia["link"]
 
-    resumen = crear_resumen_extenso(
-        noticia["titulo"],
-        noticia["descripcion"],
-        link
+    titulo = escape(
+        traducir(noticia["titulo"])
     )
 
-    resumen = escape(resumen)
+    descripcion = traducir(
+        noticia["descripcion"]
+    )
+
+    resumen = escape(
+        crear_resumen(descripcion)
+    )
+
+    link = noticia["link"]
 
     mensaje = (
         f"<b>{total_enviadas + 1}. {titulo}</b>\n\n"
@@ -342,8 +397,11 @@ for noticia in obtener_noticias_neuraldsp():
     )
 
     enviar_texto(mensaje)
+
     nuevos_links.append(link)
+
     total_enviadas += 1
+
     time.sleep(2)
 
 # ==========================================
@@ -351,17 +409,20 @@ for noticia in obtener_noticias_neuraldsp():
 # ==========================================
 
 for noticia in obtener_noticias_youngguitar():
-    titulo_traducido = traducir(noticia["titulo"])
-    titulo = escape(titulo_traducido)
-    link = noticia["link"]
 
-    resumen = crear_resumen_extenso(
-        noticia["titulo"],
-        noticia["descripcion"],
-        link
+    titulo = escape(
+        traducir(noticia["titulo"])
     )
 
-    resumen = escape(resumen)
+    descripcion = traducir(
+        noticia["descripcion"]
+    )
+
+    resumen = escape(
+        crear_resumen(descripcion)
+    )
+
+    link = noticia["link"]
 
     mensaje = (
         f"<b>{total_enviadas + 1}. {titulo}</b>\n\n"
@@ -370,8 +431,11 @@ for noticia in obtener_noticias_youngguitar():
     )
 
     enviar_texto(mensaje)
+
     nuevos_links.append(link)
+
     total_enviadas += 1
+
     time.sleep(2)
 
 # ==========================================
@@ -379,19 +443,29 @@ for noticia in obtener_noticias_youngguitar():
 # ==========================================
 
 for fuente, rss_url in FUENTES.items():
+
     print(f"Buscando en {fuente}")
 
     try:
+
         feed = feedparser.parse(rss_url)
+
     except Exception as e:
+
         print(f"Error leyendo {fuente}: {e}")
+
         continue
 
     contador_fuente = 0
 
     for entry in feed.entries:
+
         titulo_original = entry.get("title", "")
-        descripcion_original = limpiar_html(entry.get("summary", ""))
+
+        descripcion_original = limpiar_html(
+            entry.get("summary", "")
+        )
+
         link = entry.get("link", "")
 
         if not titulo_original or not link:
@@ -400,19 +474,23 @@ for fuente, rss_url in FUENTES.items():
         if link in noticias_enviadas:
             continue
 
-        if not es_relevante(titulo_original, descripcion_original):
+        if not es_relevante(
+            titulo_original,
+            descripcion_original
+        ):
             continue
 
-        titulo_traducido = traducir(titulo_original)
-        titulo = escape(titulo_traducido)
-
-        resumen = crear_resumen_extenso(
-            titulo_original,
-            descripcion_original,
-            link
+        titulo = escape(
+            traducir(titulo_original)
         )
 
-        resumen = escape(resumen)
+        descripcion = traducir(
+            descripcion_original
+        )
+
+        resumen = escape(
+            crear_resumen(descripcion)
+        )
 
         mensaje = (
             f"<b>{total_enviadas + 1}. {titulo}</b>\n\n"
@@ -423,6 +501,7 @@ for fuente, rss_url in FUENTES.items():
         enviar_texto(mensaje)
 
         nuevos_links.append(link)
+
         total_enviadas += 1
         contador_fuente += 1
 
@@ -436,9 +515,15 @@ for fuente, rss_url in FUENTES.items():
 # ==========================================
 
 noticias_enviadas.extend(nuevos_links)
+
 noticias_enviadas = noticias_enviadas[-1500:]
 
-with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+with open(
+    HISTORY_FILE,
+    "w",
+    encoding="utf-8"
+) as f:
+
     json.dump(
         noticias_enviadas,
         f,
@@ -446,4 +531,7 @@ with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         indent=4
     )
 
-print(f"Noticias enviadas correctamente: {total_enviadas}")
+print(
+    f"Noticias enviadas correctamente: "
+    f"{total_enviadas}"
+)
