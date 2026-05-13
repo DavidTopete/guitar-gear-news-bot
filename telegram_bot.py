@@ -90,10 +90,11 @@ except:
 telegram_message_url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
 # ==========================================
-# TRADUCTOR
+# TRADUCTORES
 # ==========================================
 
-traductor = GoogleTranslator(source="auto", target="es")
+traductor_auto = GoogleTranslator(source="auto", target="es")
+traductor_japones = GoogleTranslator(source="ja", target="es")
 
 # ==========================================
 # FUNCIONES
@@ -105,7 +106,13 @@ def limpiar_html(texto):
 
 def traducir(texto):
     try:
-        return traductor.translate(texto)
+        return traductor_auto.translate(texto)
+    except:
+        return texto
+
+def traducir_japones(texto):
+    try:
+        return traductor_japones.translate(texto)
     except:
         return texto
 
@@ -140,6 +147,35 @@ def crear_resumen(descripcion):
         )
 
     return resumen
+
+def crear_resumen_youngguitar(texto_articulo, descripcion_rss=""):
+
+    base = texto_articulo.strip() if texto_articulo else descripcion_rss.strip()
+
+    if not base:
+        return (
+            "Esta noticia de Young Guitar está relacionada con guitarristas, equipo, "
+            "guitarras eléctricas, entrevistas, lanzamientos o novedades del rock y metal japonés. "
+            "Consulta el enlace original para revisar todos los detalles publicados por la revista."
+        )
+
+    # Limitar texto japonés antes de traducir para evitar errores
+    base = base[:3000]
+
+    texto_es = traducir_japones(base)
+    texto_es = limpiar_html(texto_es)
+
+    if len(texto_es) > 900:
+        texto_es = texto_es[:900].strip() + "..."
+
+    if len(texto_es) < 300:
+        texto_es += (
+            " Esta publicación puede ser importante para guitarristas interesados en la escena japonesa, "
+            "nuevos lanzamientos, entrevistas con músicos, equipo profesional, técnicas de ejecución "
+            "o novedades relacionadas con guitarra eléctrica, rock y metal."
+        )
+
+    return texto_es
 
 # ==========================================
 # FILTRO DE RELEVANCIA
@@ -176,6 +212,66 @@ def enviar_texto(texto):
     )
 
     print(r.text)
+
+# ==========================================
+# EXTRAER TEXTO DE ARTICULO
+# ==========================================
+
+def obtener_texto_articulo(url):
+
+    try:
+
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
+
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=12
+        )
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+            tag.decompose()
+
+        parrafos = []
+
+        for p in soup.find_all(["p", "h1", "h2", "h3"]):
+
+            texto = p.get_text(" ", strip=True)
+
+            if not texto:
+                continue
+
+            if len(texto) < 25:
+                continue
+
+            # Evitar textos comunes de navegación
+            texto_lower = texto.lower()
+
+            if "cookie" in texto_lower:
+                continue
+
+            if "privacy" in texto_lower:
+                continue
+
+            if "copyright" in texto_lower:
+                continue
+
+            parrafos.append(texto)
+
+        texto_final = " ".join(parrafos)
+
+        return texto_final[:5000]
+
+    except Exception as e:
+
+        print(f"No se pudo extraer texto del artículo: {url}")
+        print(e)
+
+        return ""
 
 # ==========================================
 # NEURAL DSP
@@ -281,9 +377,12 @@ def obtener_noticias_youngguitar():
             if link in usados or link in noticias_enviadas:
                 continue
 
+            texto_articulo = obtener_texto_articulo(link)
+
             noticias.append({
                 "titulo": titulo,
                 "descripcion": descripcion,
+                "texto_articulo": texto_articulo,
                 "link": link
             })
 
@@ -323,6 +422,8 @@ def obtener_noticias_youngguitar():
             if not titulo or len(titulo) < 8:
                 continue
 
+            texto_articulo = obtener_texto_articulo(href)
+
             noticias.append({
                 "titulo": titulo,
                 "descripcion": (
@@ -330,6 +431,7 @@ def obtener_noticias_youngguitar():
                     "guitarras eléctricas, entrevistas, lanzamientos, equipo profesional "
                     "o novedades importantes del mundo del rock y metal."
                 ),
+                "texto_articulo": texto_articulo,
                 "link": href
             })
 
@@ -411,16 +513,15 @@ for noticia in obtener_noticias_neuraldsp():
 for noticia in obtener_noticias_youngguitar():
 
     titulo = escape(
-        traducir(noticia["titulo"])
+        traducir_japones(noticia["titulo"])
     )
 
-    descripcion = traducir(
-        noticia["descripcion"]
+    resumen_young = crear_resumen_youngguitar(
+        noticia.get("texto_articulo", ""),
+        noticia.get("descripcion", "")
     )
 
-    resumen = escape(
-        crear_resumen(descripcion)
-    )
+    resumen = escape(resumen_young)
 
     link = noticia["link"]
 
