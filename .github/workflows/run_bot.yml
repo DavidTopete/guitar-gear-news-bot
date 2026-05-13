@@ -2,8 +2,8 @@ name: Guitar Gear News Bot
 
 on:
   schedule:
-    # Cada 4 horas
-    - cron: '0 */4 * * *'
+    # 12:00 AM y 12:00 PM hora UTC
+    - cron: '0 0,12 * * *'
 
   workflow_dispatch:
 
