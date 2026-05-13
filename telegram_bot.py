@@ -128,10 +128,6 @@ def crear_resumen(descripcion):
     if not descripcion:
         return (
             "Consulta el enlace para leer la información completa sobre esta noticia. "
-            "El contenido está relacionado con guitarra eléctrica, equipo, amplificadores, "
-            "pedales, plugins, modeladores o tecnología para guitarristas. "
-            "Puede incluir lanzamientos, actualizaciones, entrevistas, reseñas o novedades "
-            "importantes dentro del mundo del gear."
         )
 
     resumen = descripcion.strip()
@@ -455,14 +451,6 @@ fecha_hoy = datetime.now().strftime("%d/%m/%Y")
 encabezado = (
     f"🎸 <b>GUITAR GEAR NEWS</b>\n\n"
     f"<b>Fecha:</b> {fecha_hoy}\n"
-    f"<b>Cobertura:</b> últimas noticias disponibles\n\n"
-    f"<b>Temas:</b>\n"
-    f"Guitarras\n"
-    f"Amplificadores\n"
-    f"Pedales\n"
-    f"Plugins\n"
-    f"Modeladores\n"
-    f"Gear para guitarristas"
 )
 
 enviar_texto(encabezado)
