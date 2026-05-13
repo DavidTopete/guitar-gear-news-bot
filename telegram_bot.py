@@ -55,6 +55,20 @@ def limpiar_html(texto):
     soup = BeautifulSoup(texto or "", "html.parser")
     return soup.get_text(separator=" ", strip=True)
 
+def contiene_japones(texto):
+    if not texto:
+        return False
+
+    for char in texto:
+        if (
+            "\u3040" <= char <= "\u30ff" or
+            "\u3400" <= char <= "\u4dbf" or
+            "\u4e00" <= char <= "\u9fff"
+        ):
+            return True
+
+    return False
+
 def traducir(texto):
     try:
         return traductor_auto.translate(texto)
@@ -62,10 +76,31 @@ def traducir(texto):
         return texto
 
 def traducir_japones(texto):
+    if not texto:
+        return ""
+
     try:
-        return traductor_japones.translate(texto)
+        traducido = traductor_japones.translate(texto)
+
+        if traducido and not contiene_japones(traducido):
+            return traducido
+
     except:
-        return texto
+        pass
+
+    try:
+        traducido = traductor_auto.translate(texto)
+
+        if traducido:
+            return traducido
+
+    except:
+        pass
+
+    return (
+        "No se pudo traducir automáticamente el texto completo de esta noticia japonesa. "
+        "Consulta el enlace original para revisar la publicación completa."
+    )
 
 def escape(texto):
     return html.escape(texto or "")
@@ -116,8 +151,17 @@ def crear_resumen_youngguitar(texto_articulo, descripcion_rss=""):
         )
 
     base = base[:3000]
+
     texto_es = traducir_japones(base)
     texto_es = limpiar_html(texto_es)
+
+    if contiene_japones(texto_es):
+        texto_es = (
+            "La publicación original está en japonés y no pudo traducirse completamente de forma automática. "
+            "El contenido pertenece a Young Guitar y puede tratar sobre guitarristas, entrevistas, "
+            "equipo profesional, lanzamientos o novedades del rock y metal japonés. "
+            "Consulta el enlace original para revisar todos los detalles."
+        )
 
     if len(texto_es) > 900:
         texto_es = texto_es[:900].strip() + "..."
