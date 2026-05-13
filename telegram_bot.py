@@ -5,15 +5,14 @@ import html
 import requests
 import feedparser
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from deep_translator import GoogleTranslator
 
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 HISTORY_FILE = "noticias_enviadas.json"
-NOTICIAS_POR_FUENTE = 2
-TOTAL_NOTICIAS = 20
+NOTICIAS_POR_FUENTE = 1
 
 FUENTES = {
     "Guitar World": "https://www.guitarworld.com/feeds/all",
@@ -71,6 +70,23 @@ def traducir_japones(texto):
 def escape(texto):
     return html.escape(texto or "")
 
+def noticia_reciente(entry):
+    try:
+        if hasattr(entry, "published_parsed") and entry.published_parsed:
+            fecha_noticia = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+        elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
+            fecha_noticia = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
+        else:
+            return False
+
+        hace_dos_semanas = datetime.now(timezone.utc) - timedelta(days=14)
+        return fecha_noticia >= hace_dos_semanas
+
+    except Exception as e:
+        print("Error validando fecha")
+        print(e)
+        return False
+
 def crear_resumen(descripcion):
     if not descripcion:
         return "Consulta el enlace para leer la información completa sobre esta noticia."
@@ -100,7 +116,6 @@ def crear_resumen_youngguitar(texto_articulo, descripcion_rss=""):
         )
 
     base = base[:3000]
-
     texto_es = traducir_japones(base)
     texto_es = limpiar_html(texto_es)
 
@@ -138,12 +153,7 @@ def obtener_texto_articulo(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
 
-        response = requests.get(
-            url,
-            headers=headers,
-            timeout=12
-        )
-
+        response = requests.get(url, headers=headers, timeout=12)
         soup = BeautifulSoup(response.text, "html.parser")
 
         for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
@@ -170,15 +180,14 @@ def obtener_texto_articulo(url):
 
             parrafos.append(texto)
 
-        texto_final = " ".join(parrafos)
-        return texto_final[:5000]
+        return " ".join(parrafos)[:5000]
 
     except Exception as e:
         print(f"No se pudo extraer texto del artículo: {url}")
         print(e)
         return ""
 
-def obtener_noticias_neuraldsp(permitir_repetidas=False, limite=2):
+def obtener_noticias_neuraldsp():
     noticias = []
 
     try:
@@ -208,7 +217,7 @@ def obtener_noticias_neuraldsp(permitir_repetidas=False, limite=2):
             if link in usados:
                 continue
 
-            if not permitir_repetidas and link in noticias_enviadas:
+            if link in noticias_enviadas:
                 continue
 
             titulo = enlace.get_text(" ", strip=True)
@@ -221,10 +230,7 @@ def obtener_noticias_neuraldsp(permitir_repetidas=False, limite=2):
                 "descripcion": (
                     "Nueva publicación de Neural DSP relacionada con plugins, "
                     "actualizaciones, modeladores de amplificador, tecnología de audio "
-                    "o herramientas digitales para guitarristas modernos. "
-                    "La noticia puede incluir mejoras de software, nuevos artistas, "
-                    "compatibilidad con hardware, presets o cambios importantes "
-                    "en productos utilizados por músicos profesionales."
+                    "o herramientas digitales para guitarristas modernos."
                 ),
                 "link": link,
                 "tipo": "auto"
@@ -232,7 +238,7 @@ def obtener_noticias_neuraldsp(permitir_repetidas=False, limite=2):
 
             usados.add(link)
 
-            if len(noticias) >= limite:
+            if len(noticias) >= NOTICIAS_POR_FUENTE:
                 break
 
     except Exception as e:
@@ -241,15 +247,18 @@ def obtener_noticias_neuraldsp(permitir_repetidas=False, limite=2):
 
     return noticias
 
-def obtener_noticias_youngguitar(permitir_repetidas=False, limite=2):
+def obtener_noticias_youngguitar():
     noticias = []
     usados = set()
-    headers = {"User-Agent": "Mozilla/5.0"}
 
     try:
         feed = feedparser.parse("https://youngguitar.jp/feed/")
 
         for entry in feed.entries:
+
+            if not noticia_reciente(entry):
+                continue
+
             titulo = entry.get("title", "")
             descripcion = limpiar_html(entry.get("summary", ""))
             link = entry.get("link", "")
@@ -260,7 +269,7 @@ def obtener_noticias_youngguitar(permitir_repetidas=False, limite=2):
             if link in usados:
                 continue
 
-            if not permitir_repetidas and link in noticias_enviadas:
+            if link in noticias_enviadas:
                 continue
 
             texto_articulo = obtener_texto_articulo(link)
@@ -275,66 +284,16 @@ def obtener_noticias_youngguitar(permitir_repetidas=False, limite=2):
 
             usados.add(link)
 
-            if len(noticias) >= limite:
+            if len(noticias) >= NOTICIAS_POR_FUENTE:
                 return noticias
 
     except Exception as e:
         print("Error RSS Young Guitar")
         print(e)
 
-    try:
-        response = requests.get(
-            "https://youngguitar.jp/",
-            headers=headers,
-            timeout=10
-        )
-
-        soup = BeautifulSoup(response.text, "html.parser")
-        enlaces = soup.find_all("a", href=True)
-
-        for enlace in enlaces:
-            href = enlace.get("href", "")
-
-            if "youngguitar.jp" not in href:
-                continue
-
-            if href in usados:
-                continue
-
-            if not permitir_repetidas and href in noticias_enviadas:
-                continue
-
-            titulo = enlace.get_text(" ", strip=True)
-
-            if not titulo or len(titulo) < 8:
-                continue
-
-            texto_articulo = obtener_texto_articulo(href)
-
-            noticias.append({
-                "titulo": titulo,
-                "descripcion": (
-                    "Noticia publicada por Young Guitar relacionada con guitarristas, "
-                    "guitarras eléctricas, entrevistas, lanzamientos, equipo profesional "
-                    "o novedades importantes del mundo del rock y metal."
-                ),
-                "texto_articulo": texto_articulo,
-                "link": href,
-                "tipo": "japones"
-            })
-
-            usados.add(href)
-
-            if len(noticias) >= limite:
-                break
-
-    except Exception as e:
-        print("Error scraping Young Guitar")
-        print(e)
-
     return noticias
 
-def obtener_noticias_rss(fuente, rss_url, permitir_repetidas=False, limite=2):
+def obtener_noticias_rss(fuente, rss_url):
     noticias = []
 
     print(f"Buscando en {fuente}")
@@ -346,6 +305,10 @@ def obtener_noticias_rss(fuente, rss_url, permitir_repetidas=False, limite=2):
         return noticias
 
     for entry in feed.entries:
+
+        if not noticia_reciente(entry):
+            continue
+
         titulo_original = entry.get("title", "")
         descripcion_original = limpiar_html(entry.get("summary", ""))
         link = entry.get("link", "")
@@ -353,7 +316,7 @@ def obtener_noticias_rss(fuente, rss_url, permitir_repetidas=False, limite=2):
         if not titulo_original or not link:
             continue
 
-        if not permitir_repetidas and link in noticias_enviadas:
+        if link in noticias_enviadas:
             continue
 
         if not es_relevante(titulo_original, descripcion_original):
@@ -366,7 +329,7 @@ def obtener_noticias_rss(fuente, rss_url, permitir_repetidas=False, limite=2):
             "tipo": "auto"
         })
 
-        if len(noticias) >= limite:
+        if len(noticias) >= NOTICIAS_POR_FUENTE:
             break
 
     return noticias
@@ -384,16 +347,35 @@ def agregar_noticias(lista_base, nuevas, links_usados):
         lista_base.append(noticia)
         links_usados.add(link)
 
-        if len(lista_base) >= TOTAL_NOTICIAS:
-            break
-
     return lista_base
 
-# ==========================================
-# ENCABEZADO
-# ==========================================
-
 fecha_hoy = datetime.now().strftime("%d/%m/%Y")
+
+noticias_finales = []
+links_usados = set()
+
+agregar_noticias(
+    noticias_finales,
+    obtener_noticias_neuraldsp(),
+    links_usados
+)
+
+agregar_noticias(
+    noticias_finales,
+    obtener_noticias_youngguitar(),
+    links_usados
+)
+
+for fuente, rss_url in FUENTES.items():
+    agregar_noticias(
+        noticias_finales,
+        obtener_noticias_rss(fuente, rss_url),
+        links_usados
+    )
+
+if not noticias_finales:
+    print("No hay noticias nuevas para publicar.")
+    exit()
 
 encabezado = (
     f"🎸 <b>GUITAR GEAR NEWS</b>\n\n"
@@ -401,71 +383,7 @@ encabezado = (
 )
 
 enviar_texto(encabezado)
-
 time.sleep(2)
-
-# ==========================================
-# RECOLECTAR 20 NOTICIAS
-# ==========================================
-
-noticias_finales = []
-links_usados = set()
-
-# Primera vuelta: solo noticias nuevas
-agregar_noticias(
-    noticias_finales,
-    obtener_noticias_neuraldsp(False, NOTICIAS_POR_FUENTE),
-    links_usados
-)
-
-agregar_noticias(
-    noticias_finales,
-    obtener_noticias_youngguitar(False, NOTICIAS_POR_FUENTE),
-    links_usados
-)
-
-for fuente, rss_url in FUENTES.items():
-    if len(noticias_finales) >= TOTAL_NOTICIAS:
-        break
-
-    agregar_noticias(
-        noticias_finales,
-        obtener_noticias_rss(fuente, rss_url, False, NOTICIAS_POR_FUENTE),
-        links_usados
-    )
-
-# Segunda vuelta: si faltan noticias, permite repetir del historial para completar 20
-if len(noticias_finales) < TOTAL_NOTICIAS:
-
-    print("No se encontraron 20 noticias nuevas. Rellenando con noticias disponibles.")
-
-    agregar_noticias(
-        noticias_finales,
-        obtener_noticias_neuraldsp(True, 5),
-        links_usados
-    )
-
-    agregar_noticias(
-        noticias_finales,
-        obtener_noticias_youngguitar(True, 5),
-        links_usados
-    )
-
-    for fuente, rss_url in FUENTES.items():
-        if len(noticias_finales) >= TOTAL_NOTICIAS:
-            break
-
-        agregar_noticias(
-            noticias_finales,
-            obtener_noticias_rss(fuente, rss_url, True, 5),
-            links_usados
-        )
-
-noticias_finales = noticias_finales[:TOTAL_NOTICIAS]
-
-# ==========================================
-# ENVIAR 20 NOTICIAS
-# ==========================================
 
 nuevos_links = []
 total_enviadas = 0
@@ -473,9 +391,7 @@ total_enviadas = 0
 for noticia in noticias_finales:
 
     if noticia.get("tipo") == "japones":
-        titulo = escape(
-            traducir_japones(noticia["titulo"])
-        )
+        titulo = escape(traducir_japones(noticia["titulo"]))
 
         resumen_young = crear_resumen_youngguitar(
             noticia.get("texto_articulo", ""),
@@ -485,9 +401,7 @@ for noticia in noticias_finales:
         resumen = escape(resumen_young)
 
     else:
-        titulo = escape(
-            traducir(noticia["titulo"])
-        )
+        titulo = escape(traducir(noticia["titulo"]))
 
         descripcion = traducir(
             noticia.get("descripcion", "")
@@ -512,19 +426,10 @@ for noticia in noticias_finales:
 
     time.sleep(2)
 
-# ==========================================
-# GUARDAR HISTORIAL
-# ==========================================
-
 noticias_enviadas.extend(nuevos_links)
 noticias_enviadas = noticias_enviadas[-1500:]
 
-with open(
-    HISTORY_FILE,
-    "w",
-    encoding="utf-8"
-) as f:
-
+with open(HISTORY_FILE, "w", encoding="utf-8") as f:
     json.dump(
         noticias_enviadas,
         f,
@@ -532,7 +437,4 @@ with open(
         indent=4
     )
 
-print(
-    f"Noticias enviadas correctamente: "
-    f"{total_enviadas}"
-)
+print(f"Noticias enviadas correctamente: {total_enviadas}")
