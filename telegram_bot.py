@@ -108,18 +108,26 @@ def escape(texto):
 def noticia_reciente(entry):
     try:
         if hasattr(entry, "published_parsed") and entry.published_parsed:
-            fecha_noticia = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+            fecha_noticia = datetime(
+                *entry.published_parsed[:6],
+                tzinfo=timezone.utc
+            )
         elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
-            fecha_noticia = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
+            fecha_noticia = datetime(
+                *entry.updated_parsed[:6],
+                tzinfo=timezone.utc
+            )
         else:
             return False
 
         hace_dos_semanas = datetime.now(timezone.utc) - timedelta(days=14)
+
         return fecha_noticia >= hace_dos_semanas
 
     except Exception as e:
         print("Error validando fecha")
         print(e)
+
         return False
 
 def crear_resumen(descripcion):
@@ -131,21 +139,13 @@ def crear_resumen(descripcion):
     if len(resumen) > 700:
         resumen = resumen[:700].strip() + "..."
 
-    if len(resumen) < 250:
-        resumen += (
-        )
-
-    return resumen
+    return resumen.strip()
 
 def crear_resumen_youngguitar(texto_articulo, descripcion_rss=""):
     base = texto_articulo.strip() if texto_articulo else descripcion_rss.strip()
 
     if not base:
-        return (
-            "Esta noticia de Young Guitar está relacionada con guitarristas, equipo, "
-            "guitarras eléctricas, entrevistas, lanzamientos o novedades del rock y metal japonés. "
-            "Consulta el enlace original para revisar todos los detalles publicados por la revista."
-        )
+        return "Consulta el enlace original para revisar la publicación completa."
 
     base = base[:3000]
 
@@ -155,26 +155,21 @@ def crear_resumen_youngguitar(texto_articulo, descripcion_rss=""):
     if contiene_japones(texto_es):
         texto_es = (
             "La publicación original está en japonés y no pudo traducirse completamente de forma automática. "
-            "El contenido pertenece a Young Guitar y puede tratar sobre guitarristas, entrevistas, "
-            "equipo profesional, lanzamientos o novedades del rock y metal japonés. "
             "Consulta el enlace original para revisar todos los detalles."
         )
 
     if len(texto_es) > 900:
         texto_es = texto_es[:900].strip() + "..."
 
-    if len(texto_es) < 300:
-        texto_es += (
-            " Esta publicación puede ser importante para guitarristas interesados en la escena japonesa, "
-            "nuevos lanzamientos, entrevistas con músicos, equipo profesional, técnicas de ejecución "
-            "o novedades relacionadas con guitarra eléctrica, rock y metal."
-        )
-
-    return texto_es
+    return texto_es.strip()
 
 def es_relevante(titulo, descripcion):
     texto = f"{titulo} {descripcion}".lower()
-    return any(keyword.lower() in texto for keyword in KEYWORDS)
+
+    return any(
+        keyword.lower() in texto
+        for keyword in KEYWORDS
+    )
 
 def enviar_texto(texto):
     if len(texto) > 3900:
@@ -187,14 +182,25 @@ def enviar_texto(texto):
         "disable_web_page_preview": False
     }
 
-    r = requests.post(telegram_message_url, data=payload)
+    r = requests.post(
+        telegram_message_url,
+        data=payload
+    )
+
     print(r.text)
 
 def obtener_texto_articulo(url):
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
 
-        response = requests.get(url, headers=headers, timeout=12)
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=12
+        )
+
         soup = BeautifulSoup(response.text, "html.parser")
 
         for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
@@ -226,13 +232,16 @@ def obtener_texto_articulo(url):
     except Exception as e:
         print(f"No se pudo extraer texto del artículo: {url}")
         print(e)
+
         return ""
 
 def obtener_noticias_neuraldsp():
     noticias = []
 
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
 
         response = requests.get(
             "https://neuraldsp.com/news",
@@ -296,7 +305,6 @@ def obtener_noticias_youngguitar():
         feed = feedparser.parse("https://youngguitar.jp/feed/")
 
         for entry in feed.entries:
-
             if not noticia_reciente(entry):
                 continue
 
@@ -341,12 +349,13 @@ def obtener_noticias_rss(fuente, rss_url):
 
     try:
         feed = feedparser.parse(rss_url)
+
     except Exception as e:
         print(f"Error leyendo {fuente}: {e}")
+
         return noticias
 
     for entry in feed.entries:
-
         if not noticia_reciente(entry):
             continue
 
@@ -360,7 +369,10 @@ def obtener_noticias_rss(fuente, rss_url):
         if link in noticias_enviadas:
             continue
 
-        if not es_relevante(titulo_original, descripcion_original):
+        if not es_relevante(
+            titulo_original,
+            descripcion_original
+        ):
             continue
 
         noticias.append({
@@ -424,15 +436,17 @@ encabezado = (
 )
 
 enviar_texto(encabezado)
+
 time.sleep(2)
 
 nuevos_links = []
 total_enviadas = 0
 
 for noticia in noticias_finales:
-
     if noticia.get("tipo") == "japones":
-        titulo = escape(traducir_japones(noticia["titulo"]))
+        titulo = escape(
+            traducir_japones(noticia["titulo"])
+        )
 
         resumen_young = crear_resumen_youngguitar(
             noticia.get("texto_articulo", ""),
@@ -442,7 +456,9 @@ for noticia in noticias_finales:
         resumen = escape(resumen_young)
 
     else:
-        titulo = escape(traducir(noticia["titulo"]))
+        titulo = escape(
+            traducir(noticia["titulo"])
+        )
 
         descripcion = traducir(
             noticia.get("descripcion", "")
@@ -463,14 +479,20 @@ for noticia in noticias_finales:
     enviar_texto(mensaje)
 
     nuevos_links.append(link)
+
     total_enviadas += 1
 
     time.sleep(2)
 
 noticias_enviadas.extend(nuevos_links)
+
 noticias_enviadas = noticias_enviadas[-1500:]
 
-with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+with open(
+    HISTORY_FILE,
+    "w",
+    encoding="utf-8"
+) as f:
     json.dump(
         noticias_enviadas,
         f,
@@ -478,4 +500,7 @@ with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         indent=4
     )
 
-print(f"Noticias enviadas correctamente: {total_enviadas}")
+print(
+    f"Noticias enviadas correctamente: "
+    f"{total_enviadas}"
+)
