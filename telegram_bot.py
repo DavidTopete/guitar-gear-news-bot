@@ -133,9 +133,6 @@ def crear_resumen(descripcion):
 
     if len(resumen) < 250:
         resumen += (
-            " Esta noticia puede ser relevante para guitarristas interesados en mejorar su sonido, "
-            "conocer nuevos productos, seguir tendencias de gear o descubrir herramientas modernas "
-            "para grabación, práctica y presentaciones en vivo."
         )
 
     return resumen
