@@ -30,7 +30,7 @@ KEYWORDS = [
     "electric guitar", "guitar", "guitar gear", "guitar pedals",
     "guitar amps", "guitar amplifier", "guitar plugins",
     "guitarristas", "guitarists", "guitar events", "NAMM",
-    "Neural DSP", "Line 6 Helix", "Fractal Audio", "Kemper",
+    "Line 6 Helix", "Fractal Audio", "Kemper",
     "Boss pedals", "Ibanez guitar", "Fender guitar",
     "Gibson guitar", "PRS guitar", "pedalboard",
     "amp modeler", "multi effects", "plugin", "plugins",
@@ -127,7 +127,6 @@ def noticia_reciente(entry):
     except Exception as e:
         print("Error validando fecha")
         print(e)
-
         return False
 
 def crear_resumen(descripcion):
@@ -232,70 +231,7 @@ def obtener_texto_articulo(url):
     except Exception as e:
         print(f"No se pudo extraer texto del artículo: {url}")
         print(e)
-
         return ""
-
-def obtener_noticias_neuraldsp():
-    noticias = []
-
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0"
-        }
-
-        response = requests.get(
-            "https://neuraldsp.com/news",
-            headers=headers,
-            timeout=10
-        )
-
-        soup = BeautifulSoup(response.text, "html.parser")
-        enlaces = soup.find_all("a", href=True)
-        usados = set()
-
-        for enlace in enlaces:
-            href = enlace.get("href", "")
-
-            if "/news/" not in href:
-                continue
-
-            if href.startswith("/"):
-                link = "https://neuraldsp.com" + href
-            else:
-                link = href
-
-            if link in usados:
-                continue
-
-            if link in noticias_enviadas:
-                continue
-
-            titulo = enlace.get_text(" ", strip=True)
-
-            if not titulo or len(titulo) < 8:
-                continue
-
-            noticias.append({
-                "titulo": titulo,
-                "descripcion": (
-                    "Nueva publicación de Neural DSP relacionada con plugins, "
-                    "actualizaciones, modeladores de amplificador, tecnología de audio "
-                    "o herramientas digitales para guitarristas modernos."
-                ),
-                "link": link,
-                "tipo": "auto"
-            })
-
-            usados.add(link)
-
-            if len(noticias) >= NOTICIAS_POR_FUENTE:
-                break
-
-    except Exception as e:
-        print("Error Neural DSP")
-        print(e)
-
-    return noticias
 
 def obtener_noticias_youngguitar():
     noticias = []
@@ -352,7 +288,6 @@ def obtener_noticias_rss(fuente, rss_url):
 
     except Exception as e:
         print(f"Error leyendo {fuente}: {e}")
-
         return noticias
 
     for entry in feed.entries:
@@ -360,7 +295,11 @@ def obtener_noticias_rss(fuente, rss_url):
             continue
 
         titulo_original = entry.get("title", "")
-        descripcion_original = limpiar_html(entry.get("summary", ""))
+
+        descripcion_original = limpiar_html(
+            entry.get("summary", "")
+        )
+
         link = entry.get("link", "")
 
         if not titulo_original or not link:
@@ -406,12 +345,6 @@ fecha_hoy = datetime.now().strftime("%d/%m/%Y")
 
 noticias_finales = []
 links_usados = set()
-
-agregar_noticias(
-    noticias_finales,
-    obtener_noticias_neuraldsp(),
-    links_usados
-)
 
 agregar_noticias(
     noticias_finales,
