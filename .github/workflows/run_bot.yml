@@ -2,7 +2,7 @@ name: Guitar Gear News Bot
 
 on:
   schedule:
-    # 12:00 AM y 12:00 PM hora UTC
+    # 12 AM y 12 PM UTC
     - cron: '0 0,12 * * *'
 
   workflow_dispatch:
@@ -35,10 +35,14 @@ jobs:
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: python telegram_bot.py
 
-      - name: Save sent news history
+      - name: Save bot state
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+
           git add noticias_enviadas.json
-          git commit -m "Update news history" || echo "No changes"
+          git add fuente_estado.json
+
+          git commit -m "Update bot state" || echo "No changes"
+
           git push
