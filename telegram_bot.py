@@ -38,7 +38,17 @@ FUENTES = {
     "Gearspace": "https://gearspace.com/board/external.php?type=RSS2",
     "Metal Injection": "https://metalinjection.net/feed",
     "Louder Sound": "https://www.loudersound.com/feeds/all",
-    "Blabbermouth": "https://blabbermouth.net/feed"
+    "Blabbermouth": "https://blabbermouth.net/feed",
+
+    # FUENTES OFICIALES DE MARCAS
+    "Fender News": "https://www.fender.com/articles/rss",
+    "Ibanez News": "https://www.ibanez.com/usa/news/rss.xml",
+    "PRS Guitars": "https://prsguitars.com/blog/rss",
+    "Line 6 News": "https://line6.com/news/feed/",
+    "Fractal Audio News": "https://forum.fractalaudio.com/forums/news.94/index.rss",
+    "Kemper News": "https://www.kemper-amps.com/news/feed",
+    "Boss News": "https://www.boss.info/global/promos/rss/",
+    "Neural DSP News": "https://neuraldsp.com/news/rss.xml"
 }
 
 FUENTES_ORDENADAS = [
@@ -67,7 +77,15 @@ KEYWORDS = [
     "Tosin Abasi", "Tim Henson", "Plini",
     "Synyster Gates", "Zakk Wylde", "Yngwie",
     "Paul Gilbert", "vst", "audio interface",
-    "IR loader", "cab sim", "amp sim", "firmware"
+    "IR loader", "cab sim", "amp sim", "firmware",
+
+    # MARCAS Y TECNOLOGIA
+    "Fender", "Ibanez", "PRS", "Line 6", "Helix",
+    "Fractal", "Axe-Fx", "FM3", "FM9",
+    "Kemper", "Boss", "Neural DSP", "Quad Cortex",
+    "firmware update", "preset", "cabinet IR",
+    "amp capture", "profiling amp", "tone match",
+    "modeler", "modeling", "pedal", "multi-effects"
 ]
 
 try:
@@ -123,15 +141,19 @@ def traducir_japones(texto):
 
     try:
         traducido = traductor_japones.translate(texto)
+
         if traducido and not contiene_japones(traducido):
             return traducido
+
     except:
         pass
 
     try:
         traducido = traductor_auto.translate(texto)
+
         if traducido:
             return traducido
+
     except:
         pass
 
@@ -324,6 +346,7 @@ def obtener_noticia_rss(fuente, rss_url):
 
     try:
         feed = feedparser.parse(rss_url)
+
     except Exception as e:
         print(f"Error leyendo {fuente}: {e}")
         return noticias
@@ -346,7 +369,10 @@ def obtener_noticia_rss(fuente, rss_url):
         if link in noticias_enviadas:
             continue
 
-        if not es_relevante(titulo_original, descripcion_original):
+        if not es_relevante(
+            titulo_original,
+            descripcion_original
+        ):
             continue
 
         noticias.append({
