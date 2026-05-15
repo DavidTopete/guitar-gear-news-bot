@@ -23,18 +23,82 @@ FUENTES = {
     "Reverb News": "https://reverb.com/news/rss",
     "Sweetwater News": "https://www.sweetwater.com/insync/feed/",
     "Gearnews Guitar": "https://www.gearnews.com/zone/guitar/feed/",
-    "Guitar.com": "https://guitar.com/feed/"
+    "Guitar.com": "https://guitar.com/feed/",
+
+    # NUEVAS FUENTES
+    "Guitar Interactive Magazine": "https://guitarinteractivemagazine.com/feed/",
+    "Vintage Guitar Magazine": "https://www.vintageguitar.com/feed/",
+    "Total Guitar": "https://www.musicradar.com/total-guitar/rss",
+    "Guitar Techniques": "https://www.musicradar.com/guitar-techniques/rss",
+    "Acoustic Guitar Magazine": "https://acousticguitar.com/feed/",
+    "Jazz Guitar Today": "https://jazzguitartoday.com/feed/",
+    "Classical Guitar Magazine": "https://classicalguitarmagazine.com/feed/",
+    "KVR Audio News": "https://www.kvraudio.com/news.rss",
+    "Gearspace": "https://gearspace.com/board/external.php?type=RSS2",
+    "Metal Injection": "https://metalinjection.net/feed",
+    "Louder Sound": "https://www.loudersound.com/feeds/all",
+    "Blabbermouth": "https://blabbermouth.net/feed"
 }
 
 KEYWORDS = [
-    "electric guitar", "guitar", "guitar gear", "guitar pedals",
-    "guitar amps", "guitar amplifier", "guitar plugins",
-    "guitarristas", "guitarists", "guitar events", "NAMM",
-    "Line 6 Helix", "Fractal Audio", "Kemper",
-    "Boss pedals", "Ibanez guitar", "Fender guitar",
-    "Gibson guitar", "PRS guitar", "pedalboard",
-    "amp modeler", "multi effects", "plugin", "plugins",
-    "guitarist", "amp", "pedal", "effects"
+    "electric guitar",
+    "guitar",
+    "guitar gear",
+    "guitar pedals",
+    "guitar amps",
+    "guitar amplifier",
+    "guitar plugins",
+    "guitarristas",
+    "guitarists",
+    "guitar events",
+    "NAMM",
+    "Line 6 Helix",
+    "Fractal Audio",
+    "Kemper",
+    "Boss pedals",
+    "Ibanez guitar",
+    "Fender guitar",
+    "Gibson guitar",
+    "PRS guitar",
+    "pedalboard",
+    "amp modeler",
+    "multi effects",
+    "plugin",
+    "plugins",
+    "guitarist",
+    "amp",
+    "pedal",
+    "effects",
+
+    # METAL / PROG
+    "metal",
+    "prog",
+    "progressive metal",
+    "shred",
+    "djent",
+    "death metal",
+    "thrash metal",
+
+    # GUITARRISTAS
+    "John Petrucci",
+    "Steve Vai",
+    "Joe Satriani",
+    "Tosin Abasi",
+    "Tim Henson",
+    "Plini",
+    "Synyster Gates",
+    "Zakk Wylde",
+    "Yngwie",
+    "Paul Gilbert",
+
+    # AUDIO / VST
+    "vst",
+    "plugin",
+    "audio interface",
+    "IR loader",
+    "cab sim",
+    "amp sim",
+    "firmware"
 ]
 
 try:
@@ -56,10 +120,12 @@ def limpiar_html(texto):
     return soup.get_text(separator=" ", strip=True)
 
 def contiene_japones(texto):
+
     if not texto:
         return False
 
     for char in texto:
+
         if (
             "\u3040" <= char <= "\u30ff" or
             "\u3400" <= char <= "\u4dbf" or
@@ -70,16 +136,19 @@ def contiene_japones(texto):
     return False
 
 def traducir(texto):
+
     try:
         return traductor_auto.translate(texto)
     except:
         return texto
 
 def traducir_japones(texto):
+
     if not texto:
         return ""
 
     try:
+
         traducido = traductor_japones.translate(texto)
 
         if traducido and not contiene_japones(traducido):
@@ -89,6 +158,7 @@ def traducir_japones(texto):
         pass
 
     try:
+
         traducido = traductor_auto.translate(texto)
 
         if traducido:
@@ -106,45 +176,63 @@ def escape(texto):
     return html.escape(texto or "")
 
 def noticia_reciente(entry):
+
     try:
+
         if hasattr(entry, "published_parsed") and entry.published_parsed:
+
             fecha_noticia = datetime(
                 *entry.published_parsed[:6],
                 tzinfo=timezone.utc
             )
+
         elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
+
             fecha_noticia = datetime(
                 *entry.updated_parsed[:6],
                 tzinfo=timezone.utc
             )
+
         else:
             return False
 
-        hace_dos_semanas = datetime.now(timezone.utc) - timedelta(days=14)
+        hace_dos_semanas = datetime.now(
+            timezone.utc
+        ) - timedelta(days=14)
 
         return fecha_noticia >= hace_dos_semanas
 
     except Exception as e:
+
         print("Error validando fecha")
         print(e)
+
         return False
 
 def crear_resumen(descripcion):
+
     if not descripcion:
-        return "Consulta el enlace para leer la información completa sobre esta noticia."
+        return (
+            "Consulta el enlace para leer la información completa sobre esta noticia."
+        )
 
     resumen = descripcion.strip()
 
     if len(resumen) > 700:
         resumen = resumen[:700].strip() + "..."
 
-    return resumen.strip()
+    resumen = resumen.strip()
+
+    return resumen
 
 def crear_resumen_youngguitar(texto_articulo, descripcion_rss=""):
+
     base = texto_articulo.strip() if texto_articulo else descripcion_rss.strip()
 
     if not base:
-        return "Consulta el enlace original para revisar la publicación completa."
+        return (
+            "Consulta el enlace original para revisar la publicación completa."
+        )
 
     base = base[:3000]
 
@@ -152,6 +240,7 @@ def crear_resumen_youngguitar(texto_articulo, descripcion_rss=""):
     texto_es = limpiar_html(texto_es)
 
     if contiene_japones(texto_es):
+
         texto_es = (
             "La publicación original está en japonés y no pudo traducirse completamente de forma automática. "
             "Consulta el enlace original para revisar todos los detalles."
@@ -160,9 +249,12 @@ def crear_resumen_youngguitar(texto_articulo, descripcion_rss=""):
     if len(texto_es) > 900:
         texto_es = texto_es[:900].strip() + "..."
 
-    return texto_es.strip()
+    texto_es = texto_es.strip()
+
+    return texto_es
 
 def es_relevante(titulo, descripcion):
+
     texto = f"{titulo} {descripcion}".lower()
 
     return any(
@@ -171,6 +263,7 @@ def es_relevante(titulo, descripcion):
     )
 
 def enviar_texto(texto):
+
     if len(texto) > 3900:
         texto = texto[:3900] + "..."
 
@@ -189,7 +282,9 @@ def enviar_texto(texto):
     print(r.text)
 
 def obtener_texto_articulo(url):
+
     try:
+
         headers = {
             "User-Agent": "Mozilla/5.0"
         }
@@ -208,6 +303,7 @@ def obtener_texto_articulo(url):
         parrafos = []
 
         for p in soup.find_all(["p", "h1", "h2", "h3"]):
+
             texto = p.get_text(" ", strip=True)
 
             if not texto or len(texto) < 25:
@@ -229,23 +325,33 @@ def obtener_texto_articulo(url):
         return " ".join(parrafos)[:5000]
 
     except Exception as e:
+
         print(f"No se pudo extraer texto del artículo: {url}")
         print(e)
+
         return ""
 
 def obtener_noticias_youngguitar():
+
     noticias = []
     usados = set()
 
     try:
-        feed = feedparser.parse("https://youngguitar.jp/feed/")
+
+        feed = feedparser.parse(
+            "https://youngguitar.jp/feed/"
+        )
 
         for entry in feed.entries:
+
             if not noticia_reciente(entry):
                 continue
 
             titulo = entry.get("title", "")
-            descripcion = limpiar_html(entry.get("summary", ""))
+            descripcion = limpiar_html(
+                entry.get("summary", "")
+            )
+
             link = entry.get("link", "")
 
             if not titulo or not link:
@@ -273,24 +379,30 @@ def obtener_noticias_youngguitar():
                 return noticias
 
     except Exception as e:
+
         print("Error RSS Young Guitar")
         print(e)
 
     return noticias
 
 def obtener_noticias_rss(fuente, rss_url):
+
     noticias = []
 
     print(f"Buscando en {fuente}")
 
     try:
+
         feed = feedparser.parse(rss_url)
 
     except Exception as e:
+
         print(f"Error leyendo {fuente}: {e}")
+
         return noticias
 
     for entry in feed.entries:
+
         if not noticia_reciente(entry):
             continue
 
@@ -327,7 +439,9 @@ def obtener_noticias_rss(fuente, rss_url):
     return noticias
 
 def agregar_noticias(lista_base, nuevas, links_usados):
+
     for noticia in nuevas:
+
         link = noticia.get("link", "")
 
         if not link:
@@ -353,6 +467,7 @@ agregar_noticias(
 )
 
 for fuente, rss_url in FUENTES.items():
+
     agregar_noticias(
         noticias_finales,
         obtener_noticias_rss(fuente, rss_url),
@@ -360,6 +475,7 @@ for fuente, rss_url in FUENTES.items():
     )
 
 if not noticias_finales:
+
     print("No hay noticias nuevas para publicar.")
     exit()
 
@@ -376,7 +492,9 @@ nuevos_links = []
 total_enviadas = 0
 
 for noticia in noticias_finales:
+
     if noticia.get("tipo") == "japones":
+
         titulo = escape(
             traducir_japones(noticia["titulo"])
         )
@@ -389,6 +507,7 @@ for noticia in noticias_finales:
         resumen = escape(resumen_young)
 
     else:
+
         titulo = escape(
             traducir(noticia["titulo"])
         )
@@ -419,13 +538,14 @@ for noticia in noticias_finales:
 
 noticias_enviadas.extend(nuevos_links)
 
-noticias_enviadas = noticias_enviadas[-1500:]
+noticias_enviadas = noticias_enviadas[-2000:]
 
 with open(
     HISTORY_FILE,
     "w",
     encoding="utf-8"
 ) as f:
+
     json.dump(
         noticias_enviadas,
         f,
