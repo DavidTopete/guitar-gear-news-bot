@@ -48,7 +48,14 @@ FUENTES = {
     # MARCAS
     "Fender News": "https://www.fender.com/articles",
     "Ibanez News": "https://www.ibanez.com/usa/news/",
-    "PRS Guitars": "https://prsguitars.com/blog"
+    "PRS Guitars": "https://prsguitars.com/blog",
+    
+    # NUEVAS MARCAS
+    "Schecter Guitars": "https://www.schecterguitars.com/news",
+    "Suhr Guitars": "https://www.suhr.com/news/",
+    "Charvel Guitars": "https://www.charvel.com/blogs/news",
+    "Vigier Guitars": "https://www.vigierguitars.com/news/",
+    "Tom Anderson Guitarworks": "https://www.andersonguitarworks.com/"
 }
 
 FUENTES_ORDENADAS = [
