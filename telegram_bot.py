@@ -48,12 +48,7 @@ FUENTES = {
     # MARCAS
     "Fender News": "https://www.fender.com/articles",
     "Ibanez News": "https://www.ibanez.com/usa/news/",
-    "PRS Guitars": "https://prsguitars.com/blog",
-    "Line 6 News": "https://line6.com/news/",
-    "Fractal Audio News": "https://forum.fractalaudio.com/forums/news.94/",
-    "Kemper News": "https://www.kemper-amps.com/news",
-    "Boss News": "https://www.boss.info/global/promos/",
-    "Neural DSP News": "https://neuraldsp.com/news"
+    "PRS Guitars": "https://prsguitars.com/blog"
 }
 
 FUENTES_ORDENADAS = [
