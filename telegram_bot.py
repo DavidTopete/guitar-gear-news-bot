@@ -146,7 +146,23 @@ KEYWORDS = [
     "tone match",
     "modeler",
     "modeling",
-    "multi-effects"
+    "multi-effects",
+
+    # NUEVAS MARCAS AGREGADAS
+    "Schecter",
+    "Schecter Guitar",
+    "Schecter Guitar Research",
+    "Suhr",
+    "Suhr Guitars",
+    "Charvel",
+    "Vigier",
+    "Vigier Guitars",
+    "Tom Anderson",
+    "Tom Anderson Guitarworks",
+    "Anderson Guitarworks",
+    "boutique guitar",
+    "custom guitar",
+    "superstrat"
 ]
 
 try:
