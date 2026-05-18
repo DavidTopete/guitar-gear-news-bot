@@ -74,7 +74,6 @@ for nombre, url in FUENTES.items():
 
 KEYWORDS = [
 
-    # GENERAL
     "electric guitar",
     "guitar",
     "guitar gear",
@@ -87,7 +86,6 @@ KEYWORDS = [
     "guitar events",
     "NAMM",
 
-    # GEAR
     "Line 6 Helix",
     "Fractal Audio",
     "Kemper",
@@ -106,7 +104,6 @@ KEYWORDS = [
     "pedal",
     "effects",
 
-    # METAL
     "metal",
     "prog",
     "progressive metal",
@@ -115,7 +112,6 @@ KEYWORDS = [
     "death metal",
     "thrash metal",
 
-    # GUITARRISTAS
     "John Petrucci",
     "Steve Vai",
     "Joe Satriani",
@@ -127,7 +123,6 @@ KEYWORDS = [
     "Yngwie",
     "Paul Gilbert",
 
-    # AUDIO
     "vst",
     "audio interface",
     "IR loader",
@@ -135,7 +130,6 @@ KEYWORDS = [
     "amp sim",
     "firmware",
 
-    # MARCAS
     "Fender",
     "Ibanez",
     "PRS",
@@ -481,10 +475,6 @@ def obtener_noticia_rss(fuente, rss_url):
         "User-Agent": "Mozilla/5.0"
     }
 
-    # ==========================================
-    # RSS
-    # ==========================================
-
     try:
 
         feed = feedparser.parse(rss_url)
@@ -534,10 +524,6 @@ def obtener_noticia_rss(fuente, rss_url):
 
         print(f"RSS fallo en {fuente}")
         print(e)
-
-    # ==========================================
-    # SCRAPING WEB
-    # ==========================================
 
     try:
 
@@ -666,9 +652,11 @@ if start_index >= total_fuentes:
 indice_actual = start_index
 fuentes_revisadas = 0
 
+max_revisiones = total_fuentes * 3
+
 while (
     len(noticias_finales) < NOTICIAS_POR_CORRIDA
-    and fuentes_revisadas < total_fuentes
+    and fuentes_revisadas < max_revisiones
 ):
 
     fuente = FUENTES_ORDENADAS[indice_actual]
@@ -776,8 +764,7 @@ for noticia in noticias_finales:
     link = noticia["link"]
 
     mensaje = (
-        f"<b>{total_enviadas + 1}. "
-        f"{titulo}</b>\n\n"
+        f"<b>{titulo}</b>\n\n"
         f"{resumen}\n\n"
         f"{link}"
     )
