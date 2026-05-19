@@ -21,8 +21,6 @@ NOTICIAS_POR_CORRIDA = 16
 NOTICIAS_POR_FUENTE = 1
 
 FUENTES = {
-
-    # REVISTAS
     "Guitar World": "https://www.guitarworld.com/feeds/all",
     "Ultimate Guitar": "https://www.ultimate-guitar.com/rss/news",
     "Premier Guitar": "https://www.premierguitar.com/feeds/news",
@@ -55,7 +53,6 @@ FUENTES_ORDENADAS = [
 ]
 
 for nombre, url in FUENTES.items():
-
     FUENTES_ORDENADAS.append({
         "nombre": nombre,
         "tipo": "rss",
@@ -63,160 +60,63 @@ for nombre, url in FUENTES.items():
     })
 
 KEYWORDS = [
-
-    "electric guitar",
-    "guitar",
-    "guitar gear",
-    "guitar pedals",
-    "guitar amps",
-    "guitar amplifier",
-    "guitar plugins",
-    "guitarristas",
-    "guitarists",
-    "guitar events",
-    "NAMM",
-
-    "Line 6 Helix",
-    "Fractal Audio",
-    "Kemper",
-    "Boss pedals",
-    "Ibanez guitar",
-    "Fender guitar",
-    "Gibson guitar",
-    "PRS guitar",
-    "pedalboard",
-    "amp modeler",
-    "multi effects",
-    "plugin",
-    "plugins",
-    "guitarist",
-    "amp",
-    "pedal",
-    "effects",
-
-    "metal",
-    "prog",
-    "progressive metal",
-    "shred",
-    "djent",
-    "death metal",
-    "thrash metal",
-
-    "John Petrucci",
-    "Steve Vai",
-    "Joe Satriani",
-    "Tosin Abasi",
-    "Tim Henson",
-    "Plini",
-    "Synyster Gates",
-    "Zakk Wylde",
-    "Yngwie",
-    "Paul Gilbert",
-
-    "vst",
-    "audio interface",
-    "IR loader",
-    "cab sim",
-    "amp sim",
+    "electric guitar", "guitar", "guitar gear", "guitar pedals",
+    "guitar amps", "guitar amplifier", "guitar plugins",
+    "guitarristas", "guitarists", "guitar events", "NAMM",
+    "Line 6 Helix", "Fractal Audio", "Kemper", "Boss pedals",
+    "Ibanez guitar", "Fender guitar", "Gibson guitar", "PRS guitar",
+    "pedalboard", "amp modeler", "multi effects", "plugin", "plugins",
+    "guitarist", "amp", "pedal", "effects",
+    "metal", "prog", "progressive metal", "shred", "djent",
+    "death metal", "thrash metal",
+    "John Petrucci", "Steve Vai", "Joe Satriani", "Tosin Abasi",
+    "Tim Henson", "Plini", "Synyster Gates", "Zakk Wylde",
+    "Yngwie", "Paul Gilbert",
+    "vst", "audio interface", "IR loader", "cab sim", "amp sim",
     "firmware",
-
-    "Fender",
-    "Ibanez",
-    "PRS",
-    "Line 6",
-    "Helix",
-    "Fractal",
-    "Axe-Fx",
-    "FM3",
-    "FM9",
-    "Kemper",
-    "Boss",
-    "Neural DSP",
-    "Quad Cortex",
-    "firmware update",
-    "preset",
-    "cabinet IR",
-    "amp capture",
-    "profiling amp",
-    "tone match",
-    "modeler",
-    "modeling",
-    "multi-effects",
-
-    # NUEVAS MARCAS AGREGADAS
-    "Schecter",
-    "Schecter Guitar",
-    "Schecter Guitar Research",
-    "Suhr",
-    "Suhr Guitars",
-    "Charvel",
-    "Vigier",
-    "Vigier Guitars",
-    "Tom Anderson",
-    "Tom Anderson Guitarworks",
-    "Anderson Guitarworks",
-    "boutique guitar",
-    "custom guitar",
-    "superstrat"
+    "Fender", "Ibanez", "PRS", "Line 6", "Helix", "Fractal",
+    "Axe-Fx", "FM3", "FM9", "Kemper", "Boss", "Neural DSP",
+    "Quad Cortex", "firmware update", "preset", "cabinet IR",
+    "amp capture", "profiling amp", "tone match", "modeler",
+    "modeling", "multi-effects",
+    "Schecter", "Schecter Guitar", "Schecter Guitar Research",
+    "Suhr", "Suhr Guitars", "Charvel", "Vigier", "Vigier Guitars",
+    "Tom Anderson", "Tom Anderson Guitarworks", "Anderson Guitarworks",
+    "boutique guitar", "custom guitar", "superstrat"
 ]
 
 try:
-
     if os.path.exists(HISTORY_FILE) and os.path.getsize(HISTORY_FILE) > 0:
-
         with open(HISTORY_FILE, "r", encoding="utf-8") as f:
             noticias_enviadas = json.load(f)
-
     else:
         noticias_enviadas = []
-
 except:
     noticias_enviadas = []
 
 try:
-
     if os.path.exists(SOURCE_STATE_FILE) and os.path.getsize(SOURCE_STATE_FILE) > 0:
-
         with open(SOURCE_STATE_FILE, "r", encoding="utf-8") as f:
             estado_fuentes = json.load(f)
-
     else:
         estado_fuentes = {"next_index": 0}
-
 except:
     estado_fuentes = {"next_index": 0}
 
 telegram_message_url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
-traductor_auto = GoogleTranslator(
-    source="auto",
-    target="es"
-)
-
-traductor_japones = GoogleTranslator(
-    source="ja",
-    target="es"
-)
+traductor_auto = GoogleTranslator(source="auto", target="es")
+traductor_japones = GoogleTranslator(source="ja", target="es")
 
 def limpiar_html(texto):
-
-    soup = BeautifulSoup(
-        texto or "",
-        "html.parser"
-    )
-
-    return soup.get_text(
-        separator=" ",
-        strip=True
-    )
+    soup = BeautifulSoup(texto or "", "html.parser")
+    return soup.get_text(separator=" ", strip=True)
 
 def contiene_japones(texto):
-
     if not texto:
         return False
 
     for char in texto:
-
         if (
             "\u3040" <= char <= "\u30ff" or
             "\u3400" <= char <= "\u4dbf" or
@@ -227,20 +127,16 @@ def contiene_japones(texto):
     return False
 
 def traducir(texto):
-
     try:
         return traductor_auto.translate(texto)
-
     except:
         return texto
 
 def traducir_japones(texto):
-
     if not texto:
         return ""
 
     try:
-
         traducido = traductor_japones.translate(texto)
 
         if traducido and not contiene_japones(traducido):
@@ -250,45 +146,35 @@ def traducir_japones(texto):
         pass
 
     try:
-
         traducido = traductor_auto.translate(texto)
 
-        if traducido:
+        if traducido and not contiene_japones(traducido):
             return traducido
 
     except:
         pass
 
-    return texto
+    return ""
 
 def escape(texto):
     return html.escape(texto or "")
 
 def noticia_reciente(entry):
-
     try:
-
         if hasattr(entry, "published_parsed") and entry.published_parsed:
-
             fecha_noticia = datetime(
                 *entry.published_parsed[:6],
                 tzinfo=timezone.utc
             )
-
         elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
-
             fecha_noticia = datetime(
                 *entry.updated_parsed[:6],
                 tzinfo=timezone.utc
             )
-
         else:
             return True
 
-        hace_dos_semanas = (
-            datetime.now(timezone.utc)
-            - timedelta(days=14)
-        )
+        hace_dos_semanas = datetime.now(timezone.utc) - timedelta(days=14)
 
         return fecha_noticia >= hace_dos_semanas
 
@@ -296,12 +182,8 @@ def noticia_reciente(entry):
         return True
 
 def crear_resumen(descripcion):
-
     if not descripcion:
-
-        return (
-            "Consulta el enlace para leer la noticia completa."
-        )
+        return "Consulta el enlace para leer la noticia completa."
 
     resumen = descripcion.strip()
 
@@ -311,23 +193,21 @@ def crear_resumen(descripcion):
     return resumen
 
 def crear_resumen_youngguitar(texto_articulo, descripcion_rss=""):
-
-    base = (
-        texto_articulo.strip()
-        if texto_articulo
-        else descripcion_rss.strip()
-    )
+    base = texto_articulo.strip() if texto_articulo else descripcion_rss.strip()
 
     if not base:
-
-        return (
-            "Consulta el enlace original para revisar la publicación completa."
-        )
+        return ""
 
     base = base[:3000]
 
     texto_es = traducir_japones(base)
     texto_es = limpiar_html(texto_es)
+
+    if not texto_es:
+        return ""
+
+    if contiene_japones(texto_es):
+        return ""
 
     if len(texto_es) > 1000:
         texto_es = texto_es[:1000].strip() + "..."
@@ -335,7 +215,6 @@ def crear_resumen_youngguitar(texto_articulo, descripcion_rss=""):
     return texto_es
 
 def es_relevante(titulo, descripcion):
-
     texto = f"{titulo} {descripcion}".lower()
 
     return any(
@@ -344,7 +223,6 @@ def es_relevante(titulo, descripcion):
     )
 
 def enviar_texto(texto):
-
     if len(texto) > 3900:
         texto = texto[:3900] + "..."
 
@@ -363,9 +241,7 @@ def enviar_texto(texto):
     print(r.text)
 
 def obtener_texto_articulo(url):
-
     try:
-
         headers = {
             "User-Agent": "Mozilla/5.0"
         }
@@ -399,11 +275,7 @@ def obtener_texto_articulo(url):
             "h2",
             "h3"
         ]):
-
-            texto = p.get_text(
-                " ",
-                strip=True
-            )
+            texto = p.get_text(" ", strip=True)
 
             if not texto:
                 continue
@@ -416,24 +288,20 @@ def obtener_texto_articulo(url):
         return " ".join(parrafos)[:5000]
 
     except Exception as e:
-
         print(f"No se pudo leer artículo: {url}")
         print(e)
 
         return ""
 
 def obtener_noticia_youngguitar():
-
     noticias = []
 
     try:
-
         feed = feedparser.parse(
             "https://youngguitar.jp/feed/"
         )
 
         for entry in feed.entries:
-
             if not noticia_reciente(entry):
                 continue
 
@@ -465,14 +333,12 @@ def obtener_noticia_youngguitar():
                 return noticias
 
     except Exception as e:
-
         print("Error Young Guitar")
         print(e)
 
     return noticias
 
 def obtener_noticia_rss(fuente, rss_url):
-
     noticias = []
 
     print(f"Buscando en {fuente}")
@@ -482,25 +348,15 @@ def obtener_noticia_rss(fuente, rss_url):
     }
 
     try:
-
         feed = feedparser.parse(rss_url)
 
         if feed.entries:
-
             for entry in feed.entries:
-
                 if not noticia_reciente(entry):
                     continue
 
-                titulo_original = entry.get(
-                    "title",
-                    ""
-                )
-
-                descripcion_original = limpiar_html(
-                    entry.get("summary", "")
-                )
-
+                titulo_original = entry.get("title", "")
+                descripcion_original = limpiar_html(entry.get("summary", ""))
                 link = entry.get("link", "")
 
                 if not titulo_original or not link:
@@ -509,10 +365,7 @@ def obtener_noticia_rss(fuente, rss_url):
                 if link in noticias_enviadas:
                     continue
 
-                if not es_relevante(
-                    titulo_original,
-                    descripcion_original
-                ):
+                if not es_relevante(titulo_original, descripcion_original):
                     continue
 
                 noticias.append({
@@ -527,12 +380,10 @@ def obtener_noticia_rss(fuente, rss_url):
                     return noticias
 
     except Exception as e:
-
         print(f"RSS fallo en {fuente}")
         print(e)
 
     try:
-
         response = requests.get(
             rss_url,
             headers=headers,
@@ -544,20 +395,11 @@ def obtener_noticia_rss(fuente, rss_url):
             "html.parser"
         )
 
-        enlaces = soup.find_all(
-            "a",
-            href=True
-        )
-
+        enlaces = soup.find_all("a", href=True)
         usados = set()
 
         for enlace in enlaces:
-
-            titulo = enlace.get_text(
-                " ",
-                strip=True
-            )
-
+            titulo = enlace.get_text(" ", strip=True)
             href = enlace.get("href", "")
 
             if not titulo:
@@ -572,31 +414,19 @@ def obtener_noticia_rss(fuente, rss_url):
             if href in noticias_enviadas:
                 continue
 
-            texto_revision = (
-                f"{titulo} {href}"
-            ).lower()
+            texto_revision = f"{titulo} {href}".lower()
 
-            if not any(
-                keyword.lower() in texto_revision
-                for keyword in KEYWORDS
-            ):
+            if not any(keyword.lower() in texto_revision for keyword in KEYWORDS):
                 continue
 
             if href.startswith("/"):
-
                 dominio = urlparse(rss_url)
-
-                href = (
-                    f"{dominio.scheme}://"
-                    f"{dominio.netloc}{href}"
-                )
+                href = f"{dominio.scheme}://{dominio.netloc}{href}"
 
             noticias.append({
                 "fuente": fuente,
                 "titulo": titulo,
-                "descripcion": (
-                    f"Nueva publicación detectada desde {fuente}."
-                ),
+                "descripcion": f"Nueva publicación detectada desde {fuente}.",
                 "link": href,
                 "tipo": "auto"
             })
@@ -607,14 +437,12 @@ def obtener_noticia_rss(fuente, rss_url):
                 return noticias
 
     except Exception as e:
-
         print(f"Scraping fallo en {fuente}")
         print(e)
 
     return noticias
 
 def obtener_noticia_de_fuente(fuente):
-
     if fuente["tipo"] == "youngguitar":
         return obtener_noticia_youngguitar()
 
@@ -624,13 +452,11 @@ def obtener_noticia_de_fuente(fuente):
     )
 
 def guardar_estado_fuentes(next_index):
-
     with open(
         SOURCE_STATE_FILE,
         "w",
         encoding="utf-8"
     ) as f:
-
         json.dump(
             {"next_index": next_index},
             f,
@@ -638,19 +464,14 @@ def guardar_estado_fuentes(next_index):
             indent=4
         )
 
-fecha_hoy = datetime.now().strftime(
-    "%d/%m/%Y"
-)
+fecha_hoy = datetime.now().strftime("%d/%m/%Y")
 
 noticias_finales = []
 links_usados = set()
 
 total_fuentes = len(FUENTES_ORDENADAS)
 
-start_index = estado_fuentes.get(
-    "next_index",
-    0
-)
+start_index = estado_fuentes.get("next_index", 0)
 
 if start_index >= total_fuentes:
     start_index = 0
@@ -664,15 +485,11 @@ while (
     len(noticias_finales) < NOTICIAS_POR_CORRIDA
     and fuentes_revisadas < max_revisiones
 ):
-
     fuente = FUENTES_ORDENADAS[indice_actual]
 
-    nuevas = obtener_noticia_de_fuente(
-        fuente
-    )
+    nuevas = obtener_noticia_de_fuente(fuente)
 
     for noticia in nuevas:
-
         link = noticia.get("link", "")
 
         if not link:
@@ -682,29 +499,18 @@ while (
             continue
 
         noticias_finales.append(noticia)
-
         links_usados.add(link)
 
-        if (
-            len(noticias_finales)
-            >= NOTICIAS_POR_CORRIDA
-        ):
+        if len(noticias_finales) >= NOTICIAS_POR_CORRIDA:
             break
 
-    indice_actual = (
-        indice_actual + 1
-    ) % total_fuentes
-
+    indice_actual = (indice_actual + 1) % total_fuentes
     fuentes_revisadas += 1
 
 guardar_estado_fuentes(indice_actual)
 
 if not noticias_finales:
-
-    print(
-        "No hay noticias nuevas para publicar."
-    )
-
+    print("No hay noticias nuevas para publicar.")
     exit()
 
 encabezado = (
@@ -720,83 +526,60 @@ nuevos_links = []
 total_enviadas = 0
 
 for noticia in noticias_finales:
-
     if noticia.get("tipo") == "japones":
-
         titulo = escape(
-            traducir_japones(
-                noticia["titulo"]
-            )
+            traducir_japones(noticia["titulo"])
         )
 
-        resumen_young = (
-            crear_resumen_youngguitar(
-                noticia.get(
-                    "texto_articulo",
-                    ""
-                ),
-                noticia.get(
-                    "descripcion",
-                    ""
-                )
-            )
+        resumen_young = crear_resumen_youngguitar(
+            noticia.get("texto_articulo", ""),
+            noticia.get("descripcion", "")
         )
 
-        resumen = escape(
-            resumen_young
-        )
+        resumen = escape(resumen_young)
 
     else:
-
         titulo = escape(
-            traducir(
-                noticia["titulo"]
-            )
+            traducir(noticia["titulo"])
         )
 
         descripcion = traducir(
-            noticia.get(
-                "descripcion",
-                ""
-            )
+            noticia.get("descripcion", "")
         )
 
         resumen = escape(
-            crear_resumen(
-                descripcion
-            )
+            crear_resumen(descripcion)
         )
 
     link = noticia["link"]
 
-    mensaje = (
-        f"<b>{titulo}</b>\n\n"
-        f"{resumen}\n\n"
-        f"{link}"
-    )
+    if resumen:
+        mensaje = (
+            f"<b>{titulo}</b>\n\n"
+            f"{resumen}\n\n"
+            f"{link}"
+        )
+    else:
+        mensaje = (
+            f"<b>{titulo}</b>\n\n"
+            f"{link}"
+        )
 
     enviar_texto(mensaje)
 
     nuevos_links.append(link)
-
     total_enviadas += 1
 
     time.sleep(2)
 
-noticias_enviadas.extend(
-    nuevos_links
-)
-
-noticias_enviadas = (
-    noticias_enviadas[-2000:]
-)
+noticias_enviadas.extend(nuevos_links)
+noticias_enviadas = noticias_enviadas[-2000:]
 
 with open(
     HISTORY_FILE,
     "w",
     encoding="utf-8"
 ) as f:
-
     json.dump(
         noticias_enviadas,
         f,
