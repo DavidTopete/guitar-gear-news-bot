@@ -17,7 +17,7 @@ CHAT_ID = os.getenv("CHAT_ID")
 HISTORY_FILE = "noticias_enviadas.json"
 SOURCE_STATE_FILE = "fuente_estado.json"
 
-NOTICIAS_POR_CORRIDA = 16
+NOTICIAS_POR_CORRIDA = 5
 NOTICIAS_POR_FUENTE = 1
 
 FUENTES = {
