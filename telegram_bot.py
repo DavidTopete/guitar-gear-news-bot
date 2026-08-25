@@ -7,13 +7,22 @@ import requests
 import feedparser
 
 from urllib.parse import urlparse
-
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
-from deep_translator import GoogleTranslator
+
+# Modulo de traduccion multi-proveedor con cache. Debe estar en el mismo
+# directorio que este archivo.
+from traductor import (
+    traducir_estricto,
+    TraduccionFallida,
+    autotest,
+    resumen_stats,
+    guardar_cache,
+    proveedores_agotados,
+)
 
 # ---------------------------------------------------------------------------
-# Configuración
+# Configuracion
 # ---------------------------------------------------------------------------
 
 logging.basicConfig(
@@ -32,8 +41,26 @@ SOURCE_STATE_FILE = "fuente_estado.json"
 NOTICIAS_POR_CORRIDA = 5
 NOTICIAS_POR_FUENTE = 1
 
+# Candidatas que se recogen por fuente en cada visita. Con la politica
+# estricta hace falta mas de una: si la primera no se traduce, se prueba la
+# siguiente de la MISMA fuente antes de rotar.
+CANDIDATAS_POR_FUENTE = 3
+
 MAX_LARGO_TITULO = 250
 MAX_LARGO_RESUMEN = 800
+
+# Young Guitar: cuanto texto del articulo se manda a traducir. El original
+# usaba 3000 chars, que con el chunking del traductor son varias llamadas
+# por noticia. 1500 basta para un resumen util a la mitad de coste.
+MAX_TEXTO_ARTICULO_JA = 1500
+MAX_LARGO_RESUMEN_JA = 1000
+
+# --- Politica de traduccion estricta ---------------------------------------
+MAX_CANDIDATOS_EVALUADOS = 45
+MAX_FALLOS_SIN_NINGUN_EXITO = 6     # traductor caido -> abortar
+MAX_FALLOS_TRAS_UN_EXITO = 15       # degradacion parcial -> seguir buscando
+EXIGIR_RESUMEN_TRADUCIDO = False    # el titulo es obligatorio; el resumen no
+ABORTAR_SI_NO_HAY_TRADUCTOR = True
 
 HEADERS_HTTP = {
     "User-Agent": (
@@ -42,18 +69,6 @@ HEADERS_HTTP = {
         "Chrome/120.0.0.0 Safari/537.36"
     )
 }
-
-# Firmas que indican que el traductor devolvió una página de error
-# de Google (HTTP 200 con cuerpo de error) en vez de una traducción real.
-FIRMAS_ERROR_TRADUCCION = [
-    "that's an error",
-    "there was an error",
-    "please try again later",
-    "that's all we know",
-    "error 500",
-    "error 429",
-    "<html", "<!doctype"
-]
 
 FUENTES = {
     "Guitar World": "https://www.guitarworld.com/feeds/all",
@@ -80,19 +95,10 @@ FUENTES = {
 }
 
 FUENTES_ORDENADAS = [
-    {
-        "nombre": "Young Guitar",
-        "tipo": "youngguitar",
-        "url": "https://youngguitar.jp/feed/"
-    }
+    {"nombre": "Young Guitar", "tipo": "youngguitar", "url": "https://youngguitar.jp/feed/"}
 ]
-
-for nombre, url in FUENTES.items():
-    FUENTES_ORDENADAS.append({
-        "nombre": nombre,
-        "tipo": "rss",
-        "url": url
-    })
+for _nombre, _url in FUENTES.items():
+    FUENTES_ORDENADAS.append({"nombre": _nombre, "tipo": "rss", "url": _url})
 
 KEYWORDS = [
     "electric guitar", "guitar", "guitar gear", "guitar pedals",
@@ -122,7 +128,7 @@ KEYWORDS = [
 
 
 # ---------------------------------------------------------------------------
-# Historial y estado
+# Historial y estado de rotacion
 # ---------------------------------------------------------------------------
 
 def cargar_historial():
@@ -130,7 +136,7 @@ def cargar_historial():
         if os.path.exists(HISTORY_FILE) and os.path.getsize(HISTORY_FILE) > 0:
             with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                 historial = json.load(f)
-                return historial if isinstance(historial, list) else []
+            return historial if isinstance(historial, list) else []
         return []
     except Exception as error:
         log.error(f"Error leyendo historial, se respalda y reinicia: {error}")
@@ -146,7 +152,6 @@ def guardar_historial(historial):
     historial_limpio = list(dict.fromkeys(historial))[-2000:]
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(historial_limpio, f, ensure_ascii=False, indent=4)
-    log.info(f"Historial guardado: {len(historial_limpio)} noticias")
 
 
 def cargar_estado_fuentes():
@@ -164,18 +169,11 @@ def guardar_estado_fuentes(next_index):
         json.dump({"next_index": next_index}, f, ensure_ascii=False, indent=4)
 
 
-noticias_enviadas = cargar_historial()
-noticias_enviadas_set = set(noticias_enviadas)
-estado_fuentes = cargar_estado_fuentes()
-
-telegram_message_url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-
-traductor_auto = GoogleTranslator(source="auto", target="es")
-traductor_japones = GoogleTranslator(source="ja", target="es")
+TELEGRAM_URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
 
 # ---------------------------------------------------------------------------
-# Utilidades de texto / traducción
+# Utilidades de texto
 # ---------------------------------------------------------------------------
 
 def limpiar_html(texto):
@@ -186,158 +184,42 @@ def limpiar_html(texto):
 def contiene_japones(texto):
     if not texto:
         return False
-
     for char in texto:
-        if (
-            "\u3040" <= char <= "\u30ff" or
-            "\u3400" <= char <= "\u4dbf" or
-            "\u4e00" <= char <= "\u9fff"
-        ):
+        if ("\u3040" <= char <= "\u30ff" or
+                "\u3400" <= char <= "\u4dbf" or
+                "\u4e00" <= char <= "\u9fff"):
             return True
-
     return False
 
 
-def _parece_error_de_traduccion(texto):
-    """Detecta si el traductor devolvió una página de error de Google
-    (HTTP 200 con cuerpo de error) en vez de una traducción real."""
-    if not texto:
-        return False
-
-    texto_lower = texto.lower()
-    return any(firma in texto_lower for firma in FIRMAS_ERROR_TRADUCCION)
-
-
-def traducir(texto, max_intentos=3, espera_base=2):
-    """Traduce con reintentos y backoff exponencial. Si falla o el
-    resultado es inválido (página de error), retorna el texto original."""
-    if not texto:
-        return ""
-
-    for intento in range(1, max_intentos + 1):
-        try:
-            resultado = traductor_auto.translate(texto)
-
-            if resultado and not _parece_error_de_traduccion(resultado):
-                return resultado
-
-            log.warning(
-                f"Traducción inválida (intento {intento}/{max_intentos}), "
-                f"firma de error detectada."
-            )
-
-        except Exception as error:
-            log.warning(f"Fallo de traducción (intento {intento}/{max_intentos}): {error}")
-
-        if intento < max_intentos:
-            time.sleep(espera_base * (2 ** (intento - 1)))
-
-    log.error("No se pudo traducir tras varios intentos. Se usa texto original.")
-    return texto
-
-
-def traducir_japones(texto, max_intentos=3, espera_base=2):
-    """Traduce texto en japonés, con reintentos y validación de contenido
-    (ni error de servicio, ni japonés residual)."""
-    if not texto:
-        return ""
-
-    for intento in range(1, max_intentos + 1):
-        try:
-            traducido = traductor_japones.translate(texto)
-
-            if (
-                traducido
-                and not _parece_error_de_traduccion(traducido)
-                and not contiene_japones(traducido)
-            ):
-                return traducido
-
-            log.warning(
-                f"Traducción JA inválida (intento {intento}/{max_intentos})."
-            )
-
-        except Exception as error:
-            log.warning(f"Fallo traducción JA (intento {intento}/{max_intentos}): {error}")
-
-        if intento < max_intentos:
-            time.sleep(espera_base * (2 ** (intento - 1)))
-
-    # Fallback: intentar con el traductor automático (detección de idioma)
-    try:
-        traducido = traductor_auto.translate(texto)
-        if (
-            traducido
-            and not _parece_error_de_traduccion(traducido)
-            and not contiene_japones(traducido)
-        ):
-            return traducido
-    except Exception as error:
-        log.warning(f"Fallo fallback traducción auto: {error}")
-
-    log.error("No se pudo traducir texto en japonés tras varios intentos.")
-    return ""
+def sin_japones(texto):
+    """Validador que se pasa al traductor: rechaza salidas con japones
+    residual, de modo que la cascada pruebe el siguiente proveedor en vez
+    de dar por buena una traduccion a medias."""
+    return bool(texto) and not contiene_japones(texto)
 
 
 def escape(texto):
     return html.escape(texto or "")
 
 
+def truncar(texto, maximo, sufijo="..."):
+    if texto and len(texto) > maximo:
+        return texto[:maximo].strip() + sufijo
+    return texto
+
+
 def noticia_reciente(entry):
     try:
-        if hasattr(entry, "published_parsed") and entry.published_parsed:
-            fecha_noticia = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
-        elif hasattr(entry, "updated_parsed") and entry.updated_parsed:
-            fecha_noticia = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
+        if getattr(entry, "published_parsed", None):
+            fecha = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+        elif getattr(entry, "updated_parsed", None):
+            fecha = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
         else:
             return True
-
-        hace_dos_semanas = datetime.now(timezone.utc) - timedelta(days=14)
-        return fecha_noticia >= hace_dos_semanas
-
+        return fecha >= datetime.now(timezone.utc) - timedelta(days=14)
     except Exception:
         return True
-
-
-def crear_resumen(descripcion):
-    if not descripcion:
-        return "Consulta el enlace para leer la noticia completa."
-
-    resumen = descripcion.strip()
-
-    if len(resumen) > MAX_LARGO_RESUMEN:
-        resumen = resumen[:MAX_LARGO_RESUMEN].strip() + "..."
-
-    return resumen
-
-
-def crear_resumen_youngguitar(texto_articulo, descripcion_rss=""):
-    base = texto_articulo.strip() if texto_articulo else descripcion_rss.strip()
-
-    if not base:
-        return ""
-
-    base = base[:3000]
-
-    texto_es = traducir_japones(base)
-    texto_es = limpiar_html(texto_es)
-
-    if not texto_es:
-        return ""
-
-    if contiene_japones(texto_es):
-        return ""
-
-    if len(texto_es) > 1000:
-        texto_es = texto_es[:1000].strip() + "..."
-
-    return texto_es
-
-
-def truncar_titulo(titulo):
-    if titulo and len(titulo) > MAX_LARGO_TITULO:
-        return titulo[:MAX_LARGO_TITULO].strip() + "..."
-    return titulo
 
 
 def es_relevante(titulo, descripcion):
@@ -350,24 +232,24 @@ def es_relevante(titulo, descripcion):
 # ---------------------------------------------------------------------------
 
 def enviar_texto(texto):
-    """Envía un mensaje a Telegram. Retorna True solo si Telegram confirma
-    la entrega (HTTP 200 + ok:true en el payload)."""
     if len(texto) > 3900:
         texto = texto[:3900] + "..."
 
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": texto,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": False
-    }
-
     try:
-        r = requests.post(telegram_message_url, data=payload, timeout=20)
+        r = requests.post(
+            TELEGRAM_URL,
+            data={
+                "chat_id": CHAT_ID,
+                "text": texto,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": False
+            },
+            timeout=20
+        )
         log.info(f"Telegram status: {r.status_code}")
 
         if r.status_code != 200:
-            log.error(f"Telegram respondió con error: {r.text}")
+            log.error(f"Telegram respondio con error: {r.text}")
             return False
 
         cuerpo = r.json()
@@ -378,57 +260,86 @@ def enviar_texto(texto):
         return True
 
     except requests.exceptions.RequestException as error:
-        log.error(f"Excepción enviando a Telegram: {error}")
+        log.error(f"Excepcion enviando a Telegram: {error}")
         return False
 
 
 # ---------------------------------------------------------------------------
-# Obtención de artículos / feeds
+# Obtencion de candidatas (SIN traducir)
 # ---------------------------------------------------------------------------
 
-def obtener_texto_articulo(url):
-    try:
-        response = requests.get(url, headers=HEADERS_HTTP, timeout=12)
-        response.raise_for_status()
-
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
-            tag.decompose()
-
-        parrafos = []
-        for p in soup.find_all(["p", "h1", "h2", "h3"]):
-            texto = p.get_text(" ", strip=True)
-            if not texto or len(texto) < 25:
-                continue
-            parrafos.append(texto)
-
-        return " ".join(parrafos)[:5000]
-
-    except Exception as e:
-        log.warning(f"No se pudo leer artículo: {url} | {e}")
-        return ""
-
-
 def _descargar_feed(url):
-    """Descarga el feed con User-Agent explícito antes de parsear,
-    evitando feeds vacíos por bloqueo silencioso del servidor."""
     try:
         response = requests.get(url, headers=HEADERS_HTTP, timeout=15)
         response.raise_for_status()
         return feedparser.parse(response.content)
     except requests.exceptions.RequestException as error:
         log.warning(f"No se pudo descargar el feed ({url}): {error}")
-        return feedparser.parse(url)  # fallback al método original
+        return feedparser.parse(url)
 
 
-def obtener_noticia_youngguitar():
-    noticias = []
+def obtener_texto_articulo(url):
+    """Scraping del cuerpo del articulo. Se llama de forma PEREZOSA, solo
+    al preparar una noticia japonesa, no al recolectar candidatas."""
+    try:
+        response = requests.get(url, headers=HEADERS_HTTP, timeout=12)
+        response.raise_for_status()
 
+        soup = BeautifulSoup(response.text, "html.parser")
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+            tag.decompose()
+
+        parrafos = [
+            p.get_text(" ", strip=True)
+            for p in soup.find_all(["p", "h1", "h2", "h3"])
+        ]
+        parrafos = [t for t in parrafos if t and len(t) >= 25]
+
+        return " ".join(parrafos)[:5000]
+
+    except Exception as e:
+        log.warning(f"No se pudo leer articulo: {url} | {e}")
+        return ""
+
+
+def candidatas_youngguitar(vistos, limite):
+    candidatas = []
     try:
         feed = _descargar_feed("https://youngguitar.jp/feed/")
 
         for entry in feed.entries:
+            if len(candidatas) >= limite:
+                break
+            if not noticia_reciente(entry):
+                continue
+
+            titulo = entry.get("title", "")
+            link = entry.get("link", "")
+            if not titulo or not link or link in vistos:
+                continue
+
+            candidatas.append({
+                "fuente": "Young Guitar",
+                "titulo": titulo,
+                "descripcion": limpiar_html(entry.get("summary", "")),
+                "link": link,
+                "tipo": "japones"
+            })
+
+    except Exception as e:
+        log.warning(f"Error Young Guitar: {e}")
+
+    return candidatas
+
+
+def candidatas_rss(fuente, rss_url, vistos, limite):
+    candidatas = []
+
+    try:
+        feed = _descargar_feed(rss_url)
+        for entry in feed.entries:
+            if len(candidatas) >= limite:
+                break
             if not noticia_reciente(entry):
                 continue
 
@@ -436,150 +347,251 @@ def obtener_noticia_youngguitar():
             descripcion = limpiar_html(entry.get("summary", ""))
             link = entry.get("link", "")
 
-            if not titulo or not link:
+            if not titulo or not link or link in vistos:
+                continue
+            if not es_relevante(titulo, descripcion):
                 continue
 
-            if link in noticias_enviadas_set:
-                continue
-
-            texto_articulo = obtener_texto_articulo(link)
-
-            noticias.append({
-                "fuente": "Young Guitar",
+            candidatas.append({
+                "fuente": fuente,
                 "titulo": titulo,
                 "descripcion": descripcion,
-                "texto_articulo": texto_articulo,
                 "link": link,
-                "tipo": "japones"
+                "tipo": "auto"
             })
 
-            if len(noticias) >= NOTICIAS_POR_FUENTE:
-                return noticias
-
     except Exception as e:
-        log.warning(f"Error Young Guitar: {e}")
+        log.warning(f"RSS fallo en {fuente}: {e}")
 
-    return noticias
+    if candidatas:
+        return candidatas
 
-
-def obtener_noticia_rss(fuente, rss_url):
-    noticias = []
-    log.info(f"Buscando en {fuente}")
-
-    try:
-        feed = _descargar_feed(rss_url)
-
-        if feed.entries:
-            for entry in feed.entries:
-                if not noticia_reciente(entry):
-                    continue
-
-                titulo_original = entry.get("title", "")
-                descripcion_original = limpiar_html(entry.get("summary", ""))
-                link = entry.get("link", "")
-
-                if not titulo_original or not link:
-                    continue
-
-                if link in noticias_enviadas_set:
-                    continue
-
-                if not es_relevante(titulo_original, descripcion_original):
-                    continue
-
-                noticias.append({
-                    "fuente": fuente,
-                    "titulo": titulo_original,
-                    "descripcion": descripcion_original,
-                    "link": link,
-                    "tipo": "auto"
-                })
-
-                if len(noticias) >= NOTICIAS_POR_FUENTE:
-                    return noticias
-
-    except Exception as e:
-        log.warning(f"RSS falló en {fuente}: {e}")
-
-    # Fallback: scraping de enlaces si el RSS no trajo resultados
+    # Fallback: scraping de enlaces si el RSS no trajo nada
     try:
         response = requests.get(rss_url, headers=HEADERS_HTTP, timeout=12)
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "html.parser")
-        enlaces = soup.find_all("a", href=True)
         usados = set()
 
-        for enlace in enlaces:
+        for enlace in soup.find_all("a", href=True):
+            if len(candidatas) >= limite:
+                break
+
             titulo = enlace.get_text(" ", strip=True)
             href = enlace.get("href", "")
 
             if not titulo or len(titulo) < 20:
                 continue
-
-            if href in usados or href in noticias_enviadas_set:
+            if href in usados or href in vistos:
                 continue
-
-            texto_revision = f"{titulo} {href}".lower()
-            if not any(keyword.lower() in texto_revision for keyword in KEYWORDS):
+            if not any(k.lower() in f"{titulo} {href}".lower() for k in KEYWORDS):
                 continue
 
             if href.startswith("/"):
                 dominio = urlparse(rss_url)
                 href = f"{dominio.scheme}://{dominio.netloc}{href}"
 
-            noticias.append({
+            candidatas.append({
                 "fuente": fuente,
                 "titulo": titulo,
-                "descripcion": f"Nueva publicación detectada desde {fuente}.",
+                "descripcion": f"Nueva publicacion detectada desde {fuente}.",
                 "link": href,
                 "tipo": "auto"
             })
-
             usados.add(href)
 
-            if len(noticias) >= NOTICIAS_POR_FUENTE:
-                return noticias
-
     except Exception as e:
-        log.warning(f"Scraping falló en {fuente}: {e}")
+        log.warning(f"Scraping fallo en {fuente}: {e}")
 
-    return noticias
+    return candidatas
 
 
-def obtener_noticia_de_fuente(fuente):
+def candidatas_de_fuente(fuente, vistos, limite=CANDIDATAS_POR_FUENTE):
     if fuente["tipo"] == "youngguitar":
-        return obtener_noticia_youngguitar()
-
-    return obtener_noticia_rss(fuente["nombre"], fuente["url"])
+        return candidatas_youngguitar(vistos, limite)
+    return candidatas_rss(fuente["nombre"], fuente["url"], vistos, limite)
 
 
 # ---------------------------------------------------------------------------
-# Construcción de mensajes
+# Preparacion (traduccion estricta)
 # ---------------------------------------------------------------------------
 
-def construir_mensaje(noticia):
-    if noticia.get("tipo") == "japones":
-        titulo = escape(truncar_titulo(traducir_japones(noticia["titulo"])))
-
-        resumen_young = crear_resumen_youngguitar(
-            noticia.get("texto_articulo", ""),
-            noticia.get("descripcion", "")
+def _preparar_japonesa(noticia):
+    try:
+        titulo_es = traducir_estricto(
+            truncar(noticia["titulo"], MAX_LARGO_TITULO, sufijo=""),
+            origen="ja",
+            validador=sin_japones
         )
-        resumen = escape(resumen_young)
+    except TraduccionFallida as error:
+        log.warning(f"DESCARTADA JA (titulo): {noticia['titulo'][:60]} | {error}")
+        return None
 
+    # Scraping perezoso: solo ahora que el titulo ya paso.
+    base = obtener_texto_articulo(noticia["link"]) or noticia.get("descripcion", "")
+    base = (base or "").strip()[:MAX_TEXTO_ARTICULO_JA]
+
+    resumen_es = ""
+    if base:
+        try:
+            resumen_es = limpiar_html(
+                traducir_estricto(base, origen="ja", validador=sin_japones)
+            )
+            resumen_es = truncar(resumen_es, MAX_LARGO_RESUMEN_JA)
+        except TraduccionFallida as error:
+            if EXIGIR_RESUMEN_TRADUCIDO:
+                log.warning(f"DESCARTADA JA (resumen): {noticia['titulo'][:60]} | {error}")
+                return None
+            log.warning("Resumen japones sin traducir; se publica solo el titulo.")
+            resumen_es = ""
+
+    return titulo_es, resumen_es
+
+
+def _preparar_occidental(noticia):
+    try:
+        titulo_es = traducir_estricto(
+            truncar(noticia["titulo"], MAX_LARGO_TITULO, sufijo="")
+        )
+    except TraduccionFallida as error:
+        log.warning(f"DESCARTADA (titulo): {noticia['titulo'][:60]} | {error}")
+        return None
+
+    descripcion = (noticia.get("descripcion") or "").strip()
+    resumen_es = ""
+
+    if descripcion:
+        try:
+            resumen_es = truncar(
+                traducir_estricto(truncar(descripcion, MAX_LARGO_RESUMEN, sufijo="")),
+                MAX_LARGO_RESUMEN
+            )
+        except TraduccionFallida as error:
+            if EXIGIR_RESUMEN_TRADUCIDO:
+                log.warning(f"DESCARTADA (resumen): {noticia['titulo'][:60]} | {error}")
+                return None
+            log.warning("Resumen sin traducir; se publica solo el titulo.")
+            resumen_es = ""
+
+    return titulo_es, resumen_es
+
+
+def preparar_noticia(noticia):
+    """Traduce y arma el mensaje. Devuelve None si no es publicable."""
+    if noticia.get("tipo") == "japones":
+        resultado = _preparar_japonesa(noticia)
     else:
-        titulo = escape(truncar_titulo(traducir(noticia["titulo"])))
+        resultado = _preparar_occidental(noticia)
 
-        descripcion = traducir(noticia.get("descripcion", ""))
-        resumen = escape(crear_resumen(descripcion))
+    if resultado is None:
+        return None
 
-    link = noticia["link"]
+    titulo_es, resumen_es = resultado
 
-    if resumen:
-        return f"<b>{titulo}</b>\n\n{resumen}\n\n{link}"
+    if resumen_es:
+        mensaje = f"<b>{escape(titulo_es)}</b>\n\n{escape(resumen_es)}\n\n{noticia['link']}"
+    else:
+        mensaje = f"<b>{escape(titulo_es)}</b>\n\n{noticia['link']}"
 
-    return f"<b>{titulo}</b>\n\n{link}"
+    return {
+        "link": noticia["link"],
+        "fuente": noticia["fuente"],
+        "titulo_original": noticia["titulo"],
+        "mensaje": mensaje
+    }
+
+
+# ---------------------------------------------------------------------------
+# Seleccion con rotacion de fuentes
+# ---------------------------------------------------------------------------
+
+def seleccionar_lote(historial, indice_inicial):
+    """Rota por las fuentes traduciendo una candidata a la vez y quedandose
+    solo con las publicables. Devuelve (lote, siguiente_indice)."""
+    vistos = set(historial)
+    lote = []
+
+    evaluadas = 0
+    descartadas = 0
+    fallos_consecutivos = 0
+
+    total_fuentes = len(FUENTES_ORDENADAS)
+    indice = indice_inicial if 0 <= indice_inicial < total_fuentes else 0
+    revisiones = 0
+    max_revisiones = total_fuentes * 3
+
+    while len(lote) < NOTICIAS_POR_CORRIDA and revisiones < max_revisiones:
+        umbral = MAX_FALLOS_TRAS_UN_EXITO if lote else MAX_FALLOS_SIN_NINGUN_EXITO
+
+        if fallos_consecutivos >= umbral:
+            if lote:
+                log.error(
+                    f"Circuit breaker: {fallos_consecutivos} fallos consecutivos "
+                    f"tras {len(lote)} exitos. Proveedor degradado; se publica "
+                    f"lo obtenido."
+                )
+            else:
+                log.error(
+                    f"Circuit breaker: {fallos_consecutivos} fallos consecutivos "
+                    f"sin ninguna traduccion exitosa. Traductor caido."
+                )
+            break
+
+        if proveedores_agotados():
+            log.error("Todos los proveedores de traduccion quedaron agotados.")
+            break
+
+        if evaluadas >= MAX_CANDIDATOS_EVALUADOS:
+            log.warning(f"Techo de {MAX_CANDIDATOS_EVALUADOS} candidatas evaluadas.")
+            break
+
+        fuente = FUENTES_ORDENADAS[indice]
+        log.info(f"Revisando {fuente['nombre']} ({len(lote)}/{NOTICIAS_POR_CORRIDA})")
+
+        candidatas = candidatas_de_fuente(fuente, vistos)
+        publicadas_de_esta_fuente = 0
+
+        for candidata in candidatas:
+            if publicadas_de_esta_fuente >= NOTICIAS_POR_FUENTE:
+                break
+            if evaluadas >= MAX_CANDIDATOS_EVALUADOS:
+                break
+
+            evaluadas += 1
+            preparada = preparar_noticia(candidata)
+
+            # Se marca como vista en cualquier caso para no reevaluarla
+            # dentro de esta misma corrida. Al NO entrar al historial en
+            # disco, seguira disponible en la proxima.
+            vistos.add(candidata["link"])
+
+            if preparada is None:
+                descartadas += 1
+                fallos_consecutivos += 1
+                continue
+
+            fallos_consecutivos = 0
+            lote.append(preparada)
+            publicadas_de_esta_fuente += 1
+            log.info(f"[{len(lote)}/{NOTICIAS_POR_CORRIDA}] Lista: "
+                     f"{preparada['fuente']} - {preparada['titulo_original'][:60]}")
+
+        indice = (indice + 1) % total_fuentes
+        revisiones += 1
+
+    log.info(
+        f"Seleccion: {len(lote)} publicables | {evaluadas} evaluadas | "
+        f"{descartadas} descartadas por traduccion | {revisiones} fuentes revisadas"
+    )
+
+    if len(lote) < NOTICIAS_POR_CORRIDA:
+        log.warning(
+            f"Solo {len(lote)}/{NOTICIAS_POR_CORRIDA}. Las descartadas NO se "
+            f"marcan en el historial y se reintentaran en la proxima corrida."
+        )
+
+    return lote, indice
 
 
 # ---------------------------------------------------------------------------
@@ -595,78 +607,53 @@ def main():
         log.error("Falta configurar CHAT_ID.")
         return
 
-    fecha_hoy = datetime.now().strftime("%d/%m/%Y")
-
-    noticias_finales = []
-    links_usados = set()
-
-    total_fuentes = len(FUENTES_ORDENADAS)
-    start_index = estado_fuentes.get("next_index", 0)
-
-    if start_index >= total_fuentes:
-        start_index = 0
-
-    indice_actual = start_index
-    fuentes_revisadas = 0
-    max_revisiones = total_fuentes * 3
-
-    while (
-        len(noticias_finales) < NOTICIAS_POR_CORRIDA
-        and fuentes_revisadas < max_revisiones
-    ):
-        fuente = FUENTES_ORDENADAS[indice_actual]
-        nuevas = obtener_noticia_de_fuente(fuente)
-
-        for noticia in nuevas:
-            link = noticia.get("link", "")
-
-            if not link or link in links_usados:
-                continue
-
-            noticias_finales.append(noticia)
-            links_usados.add(link)
-
-            if len(noticias_finales) >= NOTICIAS_POR_CORRIDA:
-                break
-
-        indice_actual = (indice_actual + 1) % total_fuentes
-        fuentes_revisadas += 1
-
-    guardar_estado_fuentes(indice_actual)
-
-    if not noticias_finales:
-        log.info("No hay noticias nuevas para publicar.")
+    proveedor = autotest()
+    if proveedor is None and ABORTAR_SI_NO_HAY_TRADUCTOR:
+        log.error(
+            "Sin traductor disponible. En modo estricto no se publicaria nada; "
+            "se aborta sin tocar el historial ni el estado de rotacion."
+        )
         return
 
-    encabezado = (
-        f"🎸 <b>GUITAR GEAR NEWS</b>\n\n"
-        f"<b>Fecha:</b> {fecha_hoy}\n"
+    historial = cargar_historial()
+    log.info(f"Historial cargado: {len(historial)} noticias")
+
+    estado = cargar_estado_fuentes()
+    indice_inicial = estado.get("next_index", 0)
+
+    # Seleccion ANTES del encabezado: evita un encabezado huerfano si
+    # ninguna noticia resulta publicable.
+    lote, siguiente_indice = seleccionar_lote(historial, indice_inicial)
+
+    guardar_cache()
+    guardar_estado_fuentes(siguiente_indice)
+
+    if not lote:
+        log.warning("Ninguna noticia resulto publicable. No se envia nada.")
+        log.info(resumen_stats())
+        return
+
+    enviar_texto(
+        "🎸 <b>GUITAR GEAR NEWS</b>\n\n"
+        f"<b>Fecha:</b> {datetime.now().strftime('%d/%m/%Y')}\n"
     )
-    enviar_texto(encabezado)
     time.sleep(2)
 
-    total_enviadas = 0
-    total_fallidas = 0
+    enviadas = 0
+    fallidas = 0
 
-    for noticia in noticias_finales:
-        mensaje = construir_mensaje(noticia)
-        exito = enviar_texto(mensaje)
-
-        if exito:
-            noticias_enviadas.append(noticia["link"])
-            noticias_enviadas_set.add(noticia["link"])
-            guardar_historial(noticias_enviadas)
-            total_enviadas += 1
+    for noticia in lote:
+        if enviar_texto(noticia["mensaje"]):
+            historial.append(noticia["link"])
+            guardar_historial(historial)
+            enviadas += 1
         else:
-            total_fallidas += 1
-            log.warning(
-                f"No se pudo enviar (se reintentará en próxima corrida): "
-                f"{noticia['titulo']}"
-            )
-
+            fallidas += 1
+            log.warning(f"No se pudo enviar (se reintentara): {noticia['titulo_original']}")
         time.sleep(2)
 
-    log.info(f"Noticias enviadas correctamente: {total_enviadas} | Fallidas: {total_fallidas}")
+    log.info(f"Noticias enviadas: {enviadas} | Fallidas: {fallidas}")
+    log.info(resumen_stats())
 
 
 if __name__ == "__main__":
